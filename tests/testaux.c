@@ -35,8 +35,10 @@
  * This file is the C unit test for the bstraux module of Bstrlib.
  */
 
-#include "bstraux.h"
-#include "bstrlib.h"
+/* #include "bstraux.h" */
+/* #include "bstrlib.h" */
+#include <bstring/bstraux.h>
+#include <bstring/bstrlib.h>
 #include <check.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,13 +46,13 @@
 static int
 tWrite(const void *buf, size_t elsize, size_t nelem, void *parm)
 {
-	bstring b = (bstring) parm;
+	bstring * b = (bstring *) parm;
 	size_t i;
 	if (NULL == b || NULL == buf || 0 == elsize || 0 == nelem) {
 		return -__LINE__;
 	}
 	for (i = 0; i < nelem; ++i) {
-		if (0 > bcatblk(b, buf, elsize)) {
+		if (0 > b_catblk(b, buf, elsize)) {
 			break;
 		}
 		buf = (const void *)(elsize + (const char *)buf);
@@ -61,388 +63,388 @@ tWrite(const void *buf, size_t elsize, size_t nelem, void *parm)
 START_TEST(core_000)
 {
 	int ret = 0;
-	bstring s, t;
+	bstring *s, *t;
 	struct bwriteStream *ws;
-	s = bfromcstr("");
+	s = b_fromcstr("");
 	ck_assert(s != NULL);
-	ws = bwsOpen((bNwrite)tWrite, s);
+	ws = b_wsOpen((bNwrite)tWrite, s);
 	ck_assert(ws != NULL);
-	(void)bwsBuffLength(ws, 8);
-	ret = bwsBuffLength(ws, 0);
+	(void)b_wsBuffLength(ws, 8);
+	ret = b_wsBuffLength(ws, 0);
 	ck_assert_int_eq(ret, 8);
-	ret = bwsWriteBlk(ws, bsStaticBlkParms("Hello "));
+	ret = b_wsWriteBlk(ws, b_staticBlkParms("Hello "));
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = biseqcstr(s, "");
+	ret = b_iseq_cstr(s, "");
 	ck_assert_int_eq(ret, 1);
-	ret = bwsWriteBlk(ws, bsStaticBlkParms("World\n"));
+	ret = b_wsWriteBlk(ws, b_staticBlkParms("World\n"));
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = biseqcstr(s, "Hello Wo");
+	ret = b_iseq_cstr(s, "Hello Wo");
 	ck_assert_int_eq(ret, 1);
-	t = bwsClose(ws);
+	t = b_wsClose(ws);
 	ck_assert(t == s);
-	ret = biseqcstr(s, "Hello World\n");
+	ret = b_iseq_cstr(s, "Hello World\n");
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(s);
+	ret = b_destroy(s);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_001)
 {
-	struct tagbstring t = bsStatic("Hello world");
-	bstring b, c, d;
+	bstring t = b_static("Hello world");
+	bstring *b, *c, *d;
 	int ret = 0;
-	b = bTail(&t, 5);
+	b = b_Tail(&t, 5);
 	ck_assert(b != NULL);
-	c = bHead(&t, 5);
+	c = b_Head(&t, 5);
 	ck_assert(c != NULL);
-	ret = biseqcstr(b, "world");
+	ret = b_iseq_cstr(b, "world");
 	ck_assert_int_eq(ret, 1);
-	ret = biseqcstr(c, "Hello");
+	ret = b_iseq_cstr(c, "Hello");
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = bdestroy(c);
+	ret = b_destroy(c);
 	ck_assert_int_eq(ret, BSTR_OK);
-	b = bTail(&t, 0);
+	b = b_Tail(&t, 0);
 	ck_assert(b != NULL);
-	c = bHead(&t, 0);
+	c = b_Head(&t, 0);
 	ck_assert(c != NULL);
-	ret = biseqcstr(b, "");
+	ret = b_iseq_cstr(b, "");
 	ck_assert_int_eq(ret, 1);
-	ret = biseqcstr(c, "");
+	ret = b_iseq_cstr(c, "");
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = bdestroy(c);
+	ret = b_destroy(c);
 	ck_assert_int_eq(ret, BSTR_OK);
-	d = bstrcpy(&t);
+	d = b_strcpy(&t);
 	ck_assert(d != NULL);
-	b = bTail(d, 5);
+	b = b_Tail(d, 5);
 	ck_assert(b != NULL);
-	c = bHead(d, 5);
+	c = b_Head(d, 5);
 	ck_assert(c != NULL);
-	ret = biseqcstr(b, "world");
+	ret = b_iseq_cstr(b, "world");
 	ck_assert_int_eq(ret, 1);
-	ret = biseqcstr(c, "Hello");
+	ret = b_iseq_cstr(c, "Hello");
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = bdestroy(c);
+	ret = b_destroy(c);
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = bdestroy(d);
+	ret = b_destroy(d);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_002)
 {
-	struct tagbstring t = bsStatic("Hello world");
+	bstring t = b_static("Hello world");
 	int ret = 0;
-	bstring b;
-	ret = bSetChar(&t, 4, ',');
+	bstring * b;
+	ret = b_SetChar(&t, 4, ',');
 	ck_assert_int_eq(ret, BSTR_ERR);
-	ret = bSetChar(b = bstrcpy(&t), 4, ',');
+	ret = b_SetChar(b = b_strcpy(&t), 4, ',');
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "Hell, world");
+	ret = b_iseq_cstr(b, "Hell, world");
 	ck_assert_int_eq(ret, 1);
-	ret = bSetChar(b, -1, 'x');
+	ret = b_SetChar(b, -1, 'x');
 	ck_assert_int_eq(ret, BSTR_ERR);
 	b->slen = 2;
-	ret = bSetChar(b, 1, 'i');
+	ret = b_SetChar(b, 1, 'i');
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "Hi");
+	ret = b_iseq_cstr(b, "Hi");
 	ck_assert_int_eq(ret, 1);
-	ret = bSetChar(b, 2, 's');
+	ret = b_SetChar(b, 2, 's');
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "His");
+	ret = b_iseq_cstr(b, "His");
 	ck_assert_int_eq(ret, 1);
-	ret = bSetChar(b, 1, '\0');
+	ret = b_SetChar(b, 1, '\0');
 	ck_assert_int_eq(ret, 0);
-	ret = blength(b);
+	ret = b_length(b);
 	ck_assert_int_eq(ret, 3);
-	ret = bchare(b, 0, '?');
+	ret = b_chare(b, 0, '?');
 	ck_assert_int_eq(ret, 'H');
-	ret = bchare(b, 1, '?');
+	ret = b_chare(b, 1, '?');
 	ck_assert_int_eq(ret, '\0');
-	ret = bchare(b, 2, '?');
+	ret = b_chare(b, 2, '?');
 	ck_assert_int_eq(ret, 's');
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
 	ret = 0;
-	ret = bSetCstrChar(&t, 4, ',');
+	ret = b_SetCstrChar(&t, 4, ',');
 	ck_assert_int_eq(ret, BSTR_ERR);
-	b = bstrcpy(&t);
+	b = b_strcpy(&t);
 	ck_assert(b != NULL);
-	ret = bSetCstrChar(b, 4, ',');
+	ret = b_SetCstrChar(b, 4, ',');
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "Hell, world");
+	ret = b_iseq_cstr(b, "Hell, world");
 	ck_assert_int_eq(ret, 1);
-	ret = bSetCstrChar(b, -1, 'x');
+	ret = b_SetCstrChar(b, -1, 'x');
 	ck_assert_int_eq(ret, BSTR_ERR);
 	b->slen = 2;
-	ret = bSetCstrChar(b, 1, 'i');
+	ret = b_SetCstrChar(b, 1, 'i');
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "Hi");
+	ret = b_iseq_cstr(b, "Hi");
 	ck_assert_int_eq(ret, 1);
-	ret = bSetCstrChar(b, 2, 's');
+	ret = b_SetCstrChar(b, 2, 's');
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "His");
+	ret = b_iseq_cstr(b, "His");
 	ck_assert_int_eq(ret, 1);
-	ret = bSetCstrChar(b, 1, '\0');
+	ret = b_SetCstrChar(b, 1, '\0');
 	ck_assert_int_eq(ret, 0);
-	ret = blength(b);
+	ret = b_length(b);
 	ck_assert_int_eq(ret, 1);
-	ret = bchare(b, 0, '?');
+	ret = b_chare(b, 0, '?');
 	ck_assert_int_eq(ret, 'H');
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_003)
 {
-	struct tagbstring t = bsStatic("Hello world");
-	bstring b;
+	bstring t = b_static("Hello world");
+	bstring * b;
 	int ret = 0;
-	ret = bFill(&t, 'x', 7);
+	ret = b_Fill(&t, 'x', 7);
 	ck_assert_int_eq(ret, BSTR_ERR);
-	b = bstrcpy(&t);
+	b = b_strcpy(&t);
 	ck_assert(b != NULL);
-	ret = bFill(b, 'x', 7);
+	ret = b_Fill(b, 'x', 7);
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "xxxxxxx");
+	ret = b_iseq_cstr(b, "xxxxxxx");
 	ck_assert_int_eq(ret, 1);
-	ret = bFill(b, 'x', -1);
+	ret = b_Fill(b, 'x', -1);
 	ck_assert(ret < 0);
-	ret = bFill(b, 'x', 0);
+	ret = b_Fill(b, 'x', 0);
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "");
+	ret = b_iseq_cstr(b, "");
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_004)
 {
-	struct tagbstring t = bsStatic("foo");
+	bstring t = b_static("foo");
 	int ret = 0;
-	bstring b;
-	ret = bReplicate(&t, 4);
+	bstring * b;
+	ret = b_Replicate(&t, 4);
 	ck_assert_int_eq(ret, BSTR_ERR);
-	b = bstrcpy(&t);
+	b = b_strcpy(&t);
 	ck_assert(b != NULL);
-	ret = bReplicate(b, -1);
+	ret = b_Replicate(b, -1);
 	ck_assert_int_eq(ret, BSTR_ERR);
-	ret = bReplicate(b, 4);
+	ret = b_Replicate(b, 4);
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "foofoofoofoo");
+	ret = b_iseq_cstr(b, "foofoofoofoo");
 	ck_assert_int_eq(ret, 1);
-	ret = bReplicate(b, 0);
+	ret = b_Replicate(b, 0);
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "");
+	ret = b_iseq_cstr(b, "");
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_005)
 {
-	struct tagbstring t = bsStatic("Hello world");
+	bstring t = b_static("Hello world");
 	int ret = 0;
-	bstring b;
-	ret = bReverse(&t);
+	bstring * b;
+	ret = b_Reverse(&t);
 	ck_assert(ret < 0);
-	b = bstrcpy(&t);
+	b = b_strcpy(&t);
 	ck_assert(b != NULL);
-	ret = bReverse(b);
+	ret = b_Reverse(b);
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "dlrow olleH");
+	ret = b_iseq_cstr(b, "dlrow olleH");
 	ck_assert_int_eq(ret, 1);
 	b->slen = 0;
-	ret = bReverse(b);
+	ret = b_Reverse(b);
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "");
+	ret = b_iseq_cstr(b, "");
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_006)
 {
-	struct tagbstring t = bsStatic("Hello world");
+	bstring t = b_static("Hello world");
 	int ret = 0;
-	bstring b;
-	ret = bInsertChrs(&t, 6, 4, 'x', '?');
+	bstring * b;
+	ret = b_InsertChrs(&t, 6, 4, 'x', '?');
 	ck_assert(ret < 0);
-	b = bstrcpy(&t);
+	b = b_strcpy(&t);
 	ck_assert(b != NULL);
-	ret = bInsertChrs(b, 6, 4, 'x', '?');
+	ret = b_InsertChrs(b, 6, 4, 'x', '?');
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "Hello xxxxworld");
+	ret = b_iseq_cstr(b, "Hello xxxxworld");
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_007)
 {
-	struct tagbstring t = bsStatic("  i am  ");
+	bstring t = b_static("  i am  ");
 	int ret = 0;
-	bstring b;
-	ret = bJustifyLeft(&t, ' ');
+	bstring *b;
+	ret = b_JustifyLeft(&t, ' ');
 	ck_assert(ret < 0);
-	ret = bJustifyRight(&t, 8, ' ');
+	ret = b_JustifyRight(&t, 8, ' ');
 	ck_assert(ret < 0);
-	ret = bJustifyMargin(&t, 8, ' ');
+	ret = b_JustifyMargin(&t, 8, ' ');
 	ck_assert(ret < 0);
-	ret = bJustifyCenter(&t, 8, ' ');
+	ret = b_JustifyCenter(&t, 8, ' ');
 	ck_assert(ret < 0);
-	b = bstrcpy(&t);
+	b = b_strcpy(&t);
 	ck_assert(b != NULL);
-	ret = bJustifyLeft(b, ' ');
+	ret = b_JustifyLeft(b, ' ');
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = biseqcstr(b, "i am");
+	ret = b_iseq_cstr(b, "i am");
 	ck_assert_int_eq(ret, 1);
-	ret = bJustifyRight(b, 8, ' ');
+	ret = b_JustifyRight(b, 8, ' ');
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = biseqcstr(b, "    i am");
+	ret = b_iseq_cstr(b, "    i am");
 	ck_assert_int_eq(ret, 1);
-	ret = bJustifyMargin(b, 8, ' ');
+	ret = b_JustifyMargin(b, 8, ' ');
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = biseqcstr(b, "i     am");
+	ret = b_iseq_cstr(b, "i     am");
 	ck_assert_int_eq(ret, 1);
-	ret = bJustifyCenter(b, 8, ' ');
+	ret = b_JustifyCenter(b, 8, ' ');
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = biseqcstr(b, "  i am");
+	ret = b_iseq_cstr(b, "  i am");
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_008)
 {
-	struct tagbstring t = bsStatic("Hello world");
+	bstring t = b_static("Hello world");
 	int ret = 0;
-	bstring b;
+	bstring *b;
 	char *c;
-	c = bStr2NetStr(&t);
+	c = b_Str2NetStr(&t);
 	ck_assert(c != NULL);
 	ret = strcmp(c, "11:Hello world,");
 	ck_assert_int_eq(ret, 0);
-	b = bNetStr2Bstr(c);
+	b = b_NetStr2Bstr(c);
 	ck_assert(b != NULL);
-	ret = biseq(b, &t);
+	ret = b_iseq(b, &t);
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = bcstrfree(c);
+	ret = b_cstrfree(c);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_009)
 {
-	struct tagbstring t = bsStatic("Hello world");
+	bstring t = b_static("Hello world");
 	int err, ret = 0;
-	bstring b, c;
-	b = bBase64Encode(&t);
+	bstring *b, *c;
+	b = b_Base64Encode(&t);
 	ck_assert(b != NULL);
-	ret += 0 >= biseqcstr(b, "SGVsbG8gd29ybGQ=");
-	c = bBase64DecodeEx(b, &err);
+	ret += 0 >= b_iseq_cstr(b, "SGVsbG8gd29ybGQ=");
+	c = b_Base64DecodeEx(b, &err);
 	ck_assert(b != NULL);
 	ck_assert_int_eq(err, 0);
-	ret += 0 >= biseq(c, &t);
+	ret += 0 >= b_iseq(c, &t);
 	ck_assert_int_eq(ret, 0);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = bdestroy(c);
+	ret = b_destroy(c);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_010)
 {
-	struct tagbstring t = bsStatic("Hello world");
+	bstring t = b_static("Hello world");
 	int err, ret = 0;
-	bstring b, c;
-	b = bUuEncode(&t);
+	bstring *b, *c;
+	b = b_UuEncode(&t);
 	ck_assert(b != NULL);
-	ret = biseqcstr(b, "+2&5L;&\\@=V]R;&0`\r\n");
+	ret = b_iseq_cstr(b, "+2&5L;&\\@=V]R;&0`\r\n");
 	ck_assert_int_eq(ret, 1);
-	c = bUuDecodeEx(b, &err);
+	c = b_UuDecodeEx(b, &err);
 	ck_assert(c != NULL);
 	ck_assert_int_eq(err, 0);
-	ret = biseq(c, &t);
+	ret = b_iseq(c, &t);
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = bdestroy(c);
+	ret = b_destroy(c);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_011)
 {
-	struct tagbstring t = bsStatic("Hello world");
+	bstring t = b_static("Hello world");
 	unsigned char Ytstr[] = {
 		0x72, 0x8f, 0x96, 0x96, 0x99, 0x4a,
 		0xa1, 0x99, 0x9c, 0x96, 0x8e
 	};
-	bstring b, c;
+	bstring *b, *c;
 	int ret = 0;
-	b = bYEncode(&t);
+	b = b_YEncode(&t);
 	ck_assert(b != NULL);
 	ck_assert_int_eq(ret, 0);
-	ret = bisstemeqblk(b, Ytstr, 11);
+	ret = b_is_stem_eq_blk(b, Ytstr, 11);
 	ck_assert_int_eq(ret, 1);
-	c = bYDecode(b);
+	c = b_YDecode(b);
 	ck_assert(c != NULL);
-	ret = biseq(c, &t);
+	ret = b_iseq(c, &t);
 	ck_assert_int_eq(ret, 1);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
-	ret = bdestroy(c);
+	ret = b_destroy(c);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 START_TEST(core_012)
 {
-	struct tagbstring t = bsStatic("Hello world");
-	struct bStream * s;
+	bstring t = b_static("Hello world");
+	struct bStream *s;
 	int ret = 0;
-	bstring b, c;
-	s = bsFromBstr(&t);
+	bstring *b, *c;
+	s = bs_FromBstr(&t);
 	ck_assert(s != NULL);
-	b = bfromcstr("");
+	b = b_fromcstr("");
 	ck_assert(b != NULL);
-	ret = bsread(b, s, 6);
+	ret = bs_read(b, s, 6);
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "Hello ");
+	ret = b_iseq_cstr(b, "Hello ");
 	ck_assert_int_eq(ret, 1);
 	if (b) {
 		b->slen = 0;
 	}
-	ret = bsread(b, s, 6);
+	ret = bs_read(b, s, 6);
 	ck_assert_int_eq(ret, 0);
-	ret = biseqcstr(b, "world");
+	ret = b_iseq_cstr(b, "world");
 	ck_assert_int_eq(ret, 1);
-	c = bsclose(s);
+	c = bs_close(s);
 	ck_assert(c == NULL);
-	ret = bdestroy(b);
+	ret = b_destroy(b);
 	ck_assert_int_eq(ret, BSTR_OK);
 }
 END_TEST
 
 struct vfgetc {
 	int ofs;
-	bstring base;
+	bstring * base;
 };
 
 static int
@@ -453,28 +455,28 @@ core13_fgetc(void *ctx)
 	if (NULL == vctx || NULL == vctx->base) {
 		return EOF;
 	}
-	if (vctx->ofs >= blength (vctx->base)) {
+	if (vctx->ofs >= b_length (vctx->base)) {
 		return EOF;
 	}
-	c = bchare(vctx->base, vctx->ofs, EOF);
+	c = b_chare(vctx->base, vctx->ofs, EOF);
 	vctx->ofs++;
 	return c;
 }
 
 START_TEST(core_013)
 {
-	struct tagbstring t0 = bsStatic("Random String");
+	bstring t0 = b_static("Random String");
 	struct vfgetc vctx;
-	bstring b;
+	bstring *b;
 	int ret = 0;
 	int i;
 	for (i = 0; i < 1000; i++) {
 		vctx.ofs = 0;
 		vctx.base = &t0;
-		b = bSecureInput(INT_MAX, '\n', (bNgetc)core13_fgetc, &vctx);
-		ret = biseq(b, &t0);
+		b = b_SecureInput(INT_MAX, '\n', (bNgetc)core13_fgetc, &vctx);
+		ret = b_iseq(b, &t0);
 		ck_assert_int_eq(ret, 1);
-		bSecureDestroy(b);
+		b_SecureDestroy(b);
 	}
 }
 END_TEST

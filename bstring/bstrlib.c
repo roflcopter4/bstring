@@ -78,13 +78,17 @@
 #define INVALID(BSTR)  (IS_NULL(BSTR) || (BSTR)->slen < 0)
 #define NO_WRITE(BSTR) ((BSTR)->mlen <= 0 || (BSTR)->mlen < (BSTR)->slen)
 
-#if defined(DEBUG) || 1
+/* #if defined(DEBUG) && 0
 #  define RUNTIME_ERROR errx(1, "Runtime error at file %s, line %d", __FILE__, __LINE__)
 #  define RETURN_NULL errx(1, "Null return at file %s, line %d", __FILE__, __LINE__)
-#else
+#else */
 #  define RUNTIME_ERROR return BSTR_ERR
 #  define RETURN_NULL return NULL
-#endif
+/* #endif */
+
+/* #define RUNTIME_ERROR ({warnx("Runtime error at file %s, line %d", __FILE__, __LINE__); return BSTR_ERR;}) */
+/* #define RETURN_NULL ({warnx("Null return at file %s, line %d", __FILE__, __LINE__); return NULL;}) */
+
 
 /**
  * Compute the snapped size for a given requested size.
@@ -119,9 +123,9 @@ snapUpSize(int i)
 int
 b_alloc(bstring *bstr, const int olen)
 {
-        /* if (INVALID(bstr) || NO_WRITE(bstr) || olen <= 0) */
-                /* RUNTIME_ERROR; */
-        assert(!(INVALID(bstr) || NO_WRITE(bstr) || olen <= 0));
+        if (INVALID(bstr) || NO_WRITE(bstr) || olen <= 0)
+                RUNTIME_ERROR;
+        /* assert(!(INVALID(bstr) || NO_WRITE(bstr) || olen <= 0)); */
 
         if (olen >= bstr->mlen) {
                 uchar *tmp;
@@ -306,11 +310,8 @@ b_concat(bstring *b0, const bstring *b1)
         int len, d;
         bstring *aux = (bstring *)b1;
 
-        /* if (IS_NULL(b0) || IS_NULL(b1))
-                RUNTIME_ERROR; */
-        assert(!(IS_NULL(b0) || IS_NULL(b1)));
-
-        fprintf(stderr, "Trying to copy size %d, mlen %d\n", b1->slen, b1->mlen);
+        if (INVALID(b0) || NO_WRITE(b0) || INVALID(b1))
+                RUNTIME_ERROR;
 
         d = b0->slen;
         len = b1->slen;
@@ -408,9 +409,9 @@ b_strcpy(const bstring *bstr)
         bstring *b0;
 
         /* Attempted to copy an invalid string? */
-        /* if (INVALID(bstr))
-                RETURN_NULL; */
-        assert(!(INVALID(bstr)));
+        if (INVALID(bstr))
+                RETURN_NULL;
+        /* assert(!(INVALID(bstr))); */
 
         if (!(b0 = malloc(sizeof(bstring))))
                 RETURN_NULL;
@@ -513,7 +514,7 @@ b_assign_cstr(bstring *a, const char *str)
 
 
 int
-b_assignblk(bstring *a, const void *buf, const int len)
+b_assign_blk(bstring *a, const void *buf, const int len)
 {
         if (INVALID(a) || a->mlen < a->slen || a->mlen == 0 || !buf || len + 1 < 1)
                 RUNTIME_ERROR;
@@ -749,7 +750,7 @@ b_iseq(const bstring *b0, const bstring *b1)
         if (INVALID(b0) || INVALID(b1))
                 RUNTIME_ERROR;
         if (b0->slen != b1->slen)
-                return BSTR_OK;
+                return 0;
         if (b0->data == b1->data || b0->slen == 0)
                 return 1;
 
@@ -763,12 +764,12 @@ b_is_stem_eq_blk(const bstring *b0, const void *blk, const int len)
         if (INVALID(b0) || !blk || len < 0)
                 RUNTIME_ERROR;
         if (b0->slen < len)
-                return BSTR_OK;
+                return 0;
         if (b0->data == (const uchar *)blk || len == 0)
                 return 1;
         for (int i = 0; i < len; ++i)
                 if (b0->data[i] != ((const uchar *)blk)[i])
-                        return BSTR_OK;
+                        return 0;
 
         return 1;
 }
@@ -782,7 +783,7 @@ b_iseq_cstr(const bstring *bstr, const char *buf)
                 RUNTIME_ERROR;
         for (i = 0; i < bstr->slen; ++i)
                 if (buf[i] == '\0' || bstr->data[i] != (uchar)buf[i])
-                        return BSTR_OK;
+                        return 0;
 
         return buf[i] == '\0';
 }
@@ -796,7 +797,7 @@ b_iseq_cstr_caseless(const bstring *bstr, const char *buf)
                 RUNTIME_ERROR;
         for (i = 0; i < bstr->slen; ++i)
                 if (buf[i] == '\0' || (bstr->data[i] != (uchar)buf[i] && downcase(bstr->data[i]) != (uchar)downcase(buf[i])))
-                        return BSTR_OK;
+                        return 0;
 
         return buf[i] == '\0';
 }
@@ -813,7 +814,6 @@ b_strcmp(const bstring *b0, const bstring *b1)
                 return 0;
 
         const int n = MIN(b0->slen, b1->slen);
-#if 0
 
         for (int i = 0; i < n; ++i) {
                 int v = ((char)b0->data[i]) - ((char)b1->data[i]);
@@ -829,9 +829,8 @@ b_strcmp(const bstring *b0, const bstring *b1)
                 return -1;
 
         return 0;
-#endif
 
-        return memcmp(b0->data, b1->data, n);
+        /* return memcmp(b0->data, b1->data, n); */
 }
 
 
@@ -842,7 +841,6 @@ b_strncmp(const bstring *b0, const bstring *b1, const int n)
                 return SHRT_MIN;
 
         const int m = MIN(n, MIN(b0->slen, b1->slen));
-#if 0
 
         if (b0->data != b1->data) {
                 for (int i = 0; i < m; ++i) {
@@ -858,9 +856,8 @@ b_strncmp(const bstring *b0, const bstring *b1, const int n)
                 return 0;
         if (b0->slen > m)
                 return 1;
-#endif
 
-        return memcmp(b0->data, b1->data, m);
+        /* return memcmp(b0->data, b1->data, m); */
 }
 
 
@@ -1248,7 +1245,7 @@ int
 b_inchr(const bstring *b0, const int pos, const bstring *b1)
 {
         struct char_field chrs;
-        if (pos < 0 || INVALID(b0))
+        if (pos < 0 || INVALID(b0) || INVALID(b1))
                 RUNTIME_ERROR;
         if (1 == b1->slen)
                 return b_strchrp(b0, b1->data[0], pos);
@@ -2155,7 +2152,7 @@ b_join(const b_list *bl, const bstring *sep)
         int i, c, v;
         if (!bl || bl->qty < 0)
                 RETURN_NULL;
-        if (sep && (sep->slen < 0 || sep->data))
+        if (INVALID(sep))
                 RETURN_NULL;
 
         for (i = 0, c = 1; i < bl->qty; ++i) {

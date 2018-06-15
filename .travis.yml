@@ -21,7 +21,7 @@ env:
 addons:
   coverity_scan:
     project:
-      name: "msteinert/bstring"
+      name: "roflcopter4/bstring"
     notification_email: mike.steinert@gmail.com
     build_command_prepend: autoreconf -if && ./configure
     build_command: make -j4

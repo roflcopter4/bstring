@@ -402,7 +402,7 @@ base64DecodeSymbol(uchar alpha)
 }
 
 bstring *
-bBase64DecodeEx(const bstring *b, int *boolTruncError)
+b_Base64DecodeEx(const bstring *b, int *boolTruncError)
 {
         int i, v;
         uchar c0, c1, c2;

@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 # Initialize autoconf
-AC_PREREQ([2.59])
+AC_PREREQ([2.69])
 
 # Library versioning
 # Making releases:
@@ -12,7 +12,7 @@ AC_PREREQ([2.59])
 #	interface_age = 0
 m4_define([major_version], [1])
 m4_define([minor_version], [0])
-m4_define([micro_version], [0])
+m4_define([micro_version], [1])
 m4_define([interface_age], [0])
 
 # Initialize autoconf & automake
@@ -31,10 +31,17 @@ LT_INIT
 m4_ifdef([AC_PROG_CC_C99], [AC_PROG_CC_C99],
 	 [AC_MSG_WARN([Attemping c99 workaround due to old version of autoconf])
 	  AC_PROG_CC
-	  AX_TRY_CFLAGS([-std=c99], [AX_CFLAGS([-std=c99])])])
+	  AX_TRY_CFLAGS([-std=gnu99], [AX_CFLAGS([-std=gnu99])])])
 AX_PROG_VALGRIND
 AX_PROG_DOXYGEN
 AX_PROG_GDB
+
+AC_PROG_AWK
+AC_PROG_CPP
+AC_PROG_INSTALL
+AC_PROG_LN_S
+AC_PROG_MAKE_SET
+AC_PROG_RANLIB
 
 # OS-specific settings
 AS_CASE([$host_os],
@@ -59,6 +66,21 @@ LT_AGE=m4_eval(m4_eval(100 * minor_version + micro_version) - interface_age)
 AC_SUBST([LT_CURRENT])
 AC_SUBST([LT_REVISION])
 AC_SUBST([LT_AGE])
+
+AC_DEFINE([_GNU_SOURCE], [], [For asprintf])
+
+# Checks for header files.
+AC_CHECK_HEADERS([limits.h stddef.h stdint.h stdlib.h string.h])
+
+# Checks for typedefs, structures, and compiler characteristics.
+AC_C_INLINE
+AC_TYPE_SIZE_T
+AC_CHECK_TYPES([ptrdiff_t])
+
+# Checks for library functions.
+AC_FUNC_MALLOC
+AC_FUNC_REALLOC
+AC_CHECK_FUNCS([memchr memmove memset asprintf vasprintf])
 
 # Setup unit-test environment
 PKG_CHECK_MODULES([CHECK], [check >= 0.9],

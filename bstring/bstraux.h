@@ -50,8 +50,29 @@
 extern "C" {
 #  endif
 
-#ifndef BSTR_PUBLIC
-#  define BSTR_PUBLIC extern
+#if __GNUC__ >= 4
+#  define BSTR_PUBLIC  __attribute__((visibility("default")))
+#  define BSTR_PRIVATE __attribute__((visibility("hidden")))
+#  define INLINE       __attribute__((always_inline)) static inline
+#  ifndef _GNU_SOURCE
+#    define _GNU_SOURCE
+#  endif
+#else
+#  define BSTR_PUBLIC
+#  define BSTR_PRIVATE
+#  define INLINE static inline
+#endif
+
+#if __GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ > 4)
+#  define BSTR_PRINTF(format, argument) __attribute__((__format__(__printf__, format, argument)))
+#  define BSTR_UNUSED __attribute__((__unused__))
+#else
+#  define BSTR_PRINTF(format, argument)
+#  define BSTR_UNUSED
+#endif
+
+#ifndef __GNUC__
+#  define __attribute__(...)
 #endif
 
 /* Safety mechanisms */
@@ -331,25 +352,22 @@ BSTR_PUBLIC void *b_wsClose(struct bwriteStream *stream);
 
 /*============================================================================*/
 /* Security functions */
-#define b_SecureDestroy(b)                                              \
+#define b_SecureDestroy(b)                                             \
         do {                                                           \
-                if ((b) && (b)->mlen > 0 && (b)->data) {               \
+                if ((b) && (b)->mlen > 0 && (b)->data)                 \
                         (void)memset((b)->data, 0, (size_t)(b)->mlen); \
-                }                                                      \
-                (void)b_destroy((b));                                   \
+                (void)b_destroy((b));                                  \
         } while (0)
 
-#define b_SecureWriteProtect(t)                                               \
-        do {                                                                 \
-                if ((t).mlen >= 0) {                                         \
-                        if ((t).mlen > (t).slen)                             \
-                                {                                            \
-                                        (void)memset((t).data + (t).slen, 0, \
-                                                     (size_t)(t).mlen -      \
-                                                         (t).slen);          \
-                                }                                            \
-                        (t).mlen = -1;                                       \
-                }                                                            \
+#define b_SecureWriteProtect(t)                                            \
+        do {                                                               \
+                if ((t).mlen >= 0) {                                       \
+                        if ((t).mlen > (t).slen) {                         \
+                                (void)memset((t).data + (t).slen, 0,       \
+                                             (size_t)(t).mlen - (t).slen); \
+                        }                                                  \
+                        (t).mlen = -1;                                     \
+                }                                                          \
         } while (0)
 
 /**
@@ -362,6 +380,15 @@ BSTR_PUBLIC void *b_wsClose(struct bwriteStream *stream);
  *
  */
 BSTR_PUBLIC bstring *b_SecureInput(int maxlen, int termchar, bNgetc vgetchar, void *vgcCtx);
+
+
+/* 
+ * Cleanup
+ */
+#undef BSTR_PRIVATE
+#undef BSTR_PUBLIC
+#undef INLINE
+
 
 #ifdef __cplusplus
 }

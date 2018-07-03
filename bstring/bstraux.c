@@ -152,8 +152,7 @@ b_JustifyRight(bstring *b, int width, int space)
         if (0 > (ret = b_JustifyLeft(b, space)))
                 return ret;
         if (b->slen <= width) {
-                return b_InsertChrs(b, 0, width - b->slen, (uchar)space,
-                                   (uchar)space);
+                return b_InsertChrs(b, 0, width - b->slen, (uchar)space, (uchar)space);
         }
         return BSTR_OK;
 }
@@ -167,8 +166,7 @@ b_JustifyCenter(bstring *b, int width, int space)
         if (0 > (ret = b_JustifyLeft(b, space)))
                 return ret;
         if (b->slen <= width) {
-                return b_InsertChrs(b, 0, (width - b->slen + 1) >> 1,
-                                   (uchar)space, (uchar)space);
+                return b_InsertChrs(b, 0, (width - b->slen + 1) >> 1, (uchar)space, (uchar)space);
         }
         return BSTR_OK;
 }
@@ -183,31 +181,30 @@ b_JustifyMargin(bstring *b, int width, int space)
         if (NULL == (sl = b_split(b, (uchar)space)))
                 return -__LINE__;
         for (l = c = i = 0; i < sl->qty; i++) {
-                if (sl->entry[i]->slen > 0) {
+                if (sl->lst[i]->slen > 0) {
                         c++;
-                        l += sl->entry[i]->slen;
+                        l += sl->lst[i]->slen;
                 }
         }
         if (l + c >= width || c < 2) {
-                b_strListDestroy(sl);
+                b_list_destroy(sl);
                 return b_JustifyLeft(b, space);
         }
         b->slen = 0;
         for (i = 0; i < sl->qty; i++) {
-                if (sl->entry[i]->slen > 0) {
+                if (sl->lst[i]->slen > 0) {
                         if (b->slen > 0) {
                                 int s = (width - l + (c / 2)) / c;
-                                b_InsertChrs(b, b->slen, s, (uchar)space,
-                                            (uchar)space);
+                                b_InsertChrs(b, b->slen, s, (uchar)space, (uchar)space);
                                 l += s;
                         }
-                        b_concat(b, sl->entry[i]);
+                        b_concat(b, sl->lst[i]);
                         c--;
                         if (c <= 0)
                                 break;
                 }
         }
-        b_strListDestroy(sl);
+        b_list_destroy(sl);
         return BSTR_OK;
 }
 
@@ -333,14 +330,16 @@ b_Base64Encode(const bstring *b)
                 if (b_conchar(out, b64ETable[c0]) < 0 ||
                     b_conchar(out, b64ETable[c1]) < 0 ||
                     b_conchar(out, b64ETable[c2]) < 0 ||
-                    b_conchar(out, b64ETable[c3]) < 0) {
+                    b_conchar(out, b64ETable[c3]) < 0)
+                {
                         b_destroy(out);
                         return NULL;
                 }
         }
         if (i && ((i % 57) == 0)) {
                 if (b_conchar(out, (char)'\015') < 0 ||
-                    b_conchar(out, (char)'\012') < 0) {
+                    b_conchar(out, (char)'\012') < 0)
+                {
                         b_destroy(out);
                         return NULL;
                 }
@@ -353,7 +352,8 @@ b_Base64Encode(const bstring *b)
                 if (b_conchar(out, b64ETable[c0]) < 0 ||
                     b_conchar(out, b64ETable[c1]) < 0 ||
                     b_conchar(out, b64ETable[c2]) < 0 ||
-                    b_conchar(out, (char)'=') < 0) {
+                    b_conchar(out, (char)'=') < 0)
+                {
                         b_destroy(out);
                         return NULL;
                 }
@@ -364,7 +364,8 @@ b_Base64Encode(const bstring *b)
                 if (b_conchar(out, b64ETable[c0]) < 0 ||
                     b_conchar(out, b64ETable[c1]) < 0 ||
                     b_conchar(out, (char)'=') < 0 ||
-                    b_conchar(out, (char)'=') < 0) {
+                    b_conchar(out, (char)'=') < 0)
+                {
                         b_destroy(out);
                         return NULL;
                 }
@@ -995,16 +996,15 @@ b_wsOpen(bNwrite writeFn, void *parm)
         return ws;
 }
 
-#define internal_bwswriteout(ws, b)                                      \
-        {                                                                \
-                if ((b)->slen > 0) {                                     \
-                        if (1 != ((ws)->writeFn((b)->data, (b)->slen, 1, \
-                                              (ws)->parm))) {            \
-                                (ws)->isEOF = 1;                         \
-                                return BSTR_ERR;                         \
-                        }                                                \
-                }                                                        \
-        }
+#define internal_bwswriteout(ws, b)                                                      \
+        do {                                                                             \
+                if ((b)->slen > 0) {                                                     \
+                        if (1 != ((ws)->writeFn((b)->data, (b)->slen, 1, (ws)->parm))) { \
+                                (ws)->isEOF = 1;                                         \
+                                return BSTR_ERR;                                         \
+                        }                                                                \
+                }                                                                        \
+        } while (0)
 
 int
 b_wsWriteFlush(struct bwriteStream *ws)

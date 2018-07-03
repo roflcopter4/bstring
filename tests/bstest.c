@@ -1362,12 +1362,12 @@ test22_0(const bstring *b, const bstring *sep, int ns, ...)
                                 res = va_arg(arglist, char *);
                                 ck_assert_ptr_nonnull(res);
                                 ret = strlen(res);
-                                ck_assert(ret <= l->entry[i]->slen);
-                                ret = memcmp(l->entry[i]->data, res,
-                                             l->entry[i]->slen);
+                                ck_assert(ret <= l->lst[i]->slen);
+                                ret = memcmp(l->lst[i]->data, res,
+                                             l->lst[i]->slen);
                                 ck_assert_int_eq(ret, 0);
                                 ck_assert_int_eq(
-                                    l->entry[i]->data[l->entry[i]->slen], '\0');
+                                    l->lst[i]->data[l->lst[i]->slen], '\0');
                         }
                         va_end(arglist);
                         ck_assert_int_eq(ns, l->qty);
@@ -1471,13 +1471,13 @@ test23_aux_open(struct sbstr *sb, bstring *b)
 }
 
 static int
-test23_aux_splitcb(void *parm, BSTR_UNUSED int ofs, const bstring *entry)
+test23_aux_splitcb(void *parm, BSTR_UNUSED int ofs, const bstring *lst)
 {
         bstring *b = (bstring *)parm;
         if (b->slen > 0) {
                 b_conchar(b, '|');
         }
-        b_concat(b, entry);
+        b_concat(b, lst);
         return 0;
 }
 
@@ -1488,7 +1488,7 @@ struct tagBss {
 };
 
 static int
-test23_aux_splitcbx(void *parm, BSTR_UNUSED int ofs, const bstring *entry)
+test23_aux_splitcbx(void *parm, BSTR_UNUSED int ofs, const bstring *lst)
 {
         struct tagBss *p = (struct tagBss *)parm;
         if (!p->first) {
@@ -1496,7 +1496,7 @@ test23_aux_splitcbx(void *parm, BSTR_UNUSED int ofs, const bstring *entry)
         } else {
                 p->first = 0;
         }
-        b_concat(p->b, entry);
+        b_concat(p->b, lst);
         return 0;
 }
 

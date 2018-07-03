@@ -70,7 +70,7 @@ AC_SUBST([LT_AGE])
 AC_DEFINE([_GNU_SOURCE], [], [For asprintf])
 
 # Checks for header files.
-AC_CHECK_HEADERS([limits.h stddef.h stdint.h stdlib.h string.h])
+AC_CHECK_HEADERS([limits.h stddef.h stdint.h stdlib.h string.h err.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE
@@ -80,7 +80,7 @@ AC_CHECK_TYPES([ptrdiff_t])
 # Checks for library functions.
 AC_FUNC_MALLOC
 AC_FUNC_REALLOC
-AC_CHECK_FUNCS([memchr memmove memset asprintf vasprintf])
+AC_CHECK_FUNCS([memchr memmove memset vasprintf err])
 
 # Setup unit-test environment
 PKG_CHECK_MODULES([CHECK], [check >= 0.9],

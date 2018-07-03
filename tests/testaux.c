@@ -37,8 +37,8 @@
 
 /* #include "bstraux.h" */
 /* #include "bstrlib.h" */
-#include <bstring/bstraux.h>
-#include <bstring/bstrlib.h>
+#include "bstrlib.h"
+#include "bstraux.h"
 #include <check.h>
 #include <stdio.h>
 #include <stdlib.h>

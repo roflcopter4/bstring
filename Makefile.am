@@ -8,20 +8,20 @@ AM_CFLAGS = -I$(top_srcdir)/bstring
 lib_LTLIBRARIES = bstring/libbstring.la
 
 bstring_libbstring_la_SOURCES = \
-	bstring/bstraux.c \
 	bstring/bstrlib.c
+#	bstring/bstraux.c       
 bstring_libbstring_la_LDFLAGS = \
 	-version-info $(LT_CURRENT):$(LT_REVISION):$(LT_AGE)
 
 # install development headers
 pkgincludedir = $(includedir)/bstring
-pkginclude_HEADERS = \
-	bstring/bstraux.h \
+pkginclude_HEADERS =      \
 	bstring/bstrlib.h
+#	bstring/bstraux.h 
 
 if HAVE_CHECK
 TESTS = $(check_PROGRAMS)
-check_PROGRAMS = \
+check_PROGRAMS =     \
 	tests/bstest \
 	tests/testaux
 

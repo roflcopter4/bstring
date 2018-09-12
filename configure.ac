@@ -37,6 +37,7 @@ AX_PROG_DOXYGEN
 AX_PROG_GDB
 
 AC_PROG_AWK
+AC_PROG_CXX
 AC_PROG_CPP
 AC_PROG_INSTALL
 AC_PROG_LN_S
@@ -70,17 +71,23 @@ AC_SUBST([LT_AGE])
 AC_DEFINE([_GNU_SOURCE], [], [For asprintf])
 
 # Checks for header files.
-AC_CHECK_HEADERS([limits.h stddef.h stdint.h stdlib.h string.h err.h])
+AC_CHECK_HEADERS([inttypes.h limits.h stddef.h stdint.h stdlib.h string.h unistd.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
-AC_C_INLINE
-AC_TYPE_SIZE_T
+AC_CHECK_HEADER_STDBOOL
 AC_CHECK_TYPES([ptrdiff_t])
+AC_C_INLINE
+AC_C_RESTRICT
+AC_TYPE_INT64_T
+AC_TYPE_SIZE_T
+AC_TYPE_SSIZE_T
+AC_TYPE_UINT64_T
+AC_TYPE_UINT8_T
 
 # Checks for library functions.
 AC_FUNC_MALLOC
 AC_FUNC_REALLOC
-AC_CHECK_FUNCS([memchr memmove memset vasprintf err])
+AC_CHECK_FUNCS([memchr memmove memset strcasecmp strstr vasprintf err])
 
 # Setup unit-test environment
 PKG_CHECK_MODULES([CHECK], [check >= 0.9],

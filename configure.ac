@@ -18,47 +18,25 @@ m4_define([interface_age], [0])
 # Initialize autoconf & automake
 AC_INIT([Bstring], [major_version.minor_version.micro_version],
         [https://github.com/msteinert/bstring/issues], [bstring])
-AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE([1.9 subdir-objects foreign -Wno-portability])
+AC_CONFIG_MACRO_DIR([m4])
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
-# AC_CONFIG_SRCDIR([bstring/bstrlib.h])
+AC_CONFIG_SRCDIR([bstring/bstring.h])
 
 # Initialize Libtool
 LT_PREREQ([2.2])
 LT_INIT
 
 # Check the build environment
-m4_ifdef([AC_PROG_CC_C99], [AC_PROG_CC_C99],
-	 [AC_MSG_WARN([Attemping c99 workaround due to old version of autoconf])
-	  AC_PROG_CC
-	  AX_TRY_CFLAGS([-std=gnu99], [AX_CFLAGS([-std=gnu99])])])
-AX_PROG_VALGRIND
-AX_PROG_DOXYGEN
-AX_PROG_GDB
-
-AC_PROG_AWK
 AC_PROG_CXX
+AC_PROG_AWK
+AC_PROG_CC
 AC_PROG_CPP
 AC_PROG_INSTALL
 AC_PROG_LN_S
 AC_PROG_MAKE_SET
 AC_PROG_RANLIB
-
-# OS-specific settings
-AS_CASE([$host_os],
-[darwin*],
-	[VALGRIND_FLAGS="--dsymutil=yes"]
-)
-
-# Enable C compiler flags
-AX_TRY_CFLAGS([-Wall], [AX_CFLAGS([-Wall])])
-AX_TRY_CFLAGS([-Wextra], [AX_CFLAGS([-Wextra])])
-AX_TRY_CFLAGS([-pedantic], [AX_CFLAGS([-pedantic])])
-AX_TRY_CFLAGS([-Wstrict-prototypes], [AX_CFLAGS([-Wstrict-prototypes])])
-AX_TRY_CFLAGS([-Wcast-align], [AX_CFLAGS([-Wcast-align])])
-AX_TRY_CFLAGS([-fno-common], [AX_CFLAGS([-fno-common])])
-AX_TRY_CFLAGS([-fvisibility=hidden], [AX_CFLAGS([-fvisibility=hidden])])
-AX_TRY_LDFLAGS([-Wl,--no-undefined], [AX_LDFLAGS([-Wl,--no-undefined])])
+AC_PROG_MKDIR_P
 
 # Libtool versioning
 LT_CURRENT=m4_eval(100 * minor_version + micro_version - interface_age)
@@ -89,9 +67,8 @@ AC_FUNC_MALLOC
 AC_FUNC_REALLOC
 AC_CHECK_FUNCS([memchr memmove memset strcasecmp strstr vasprintf err])
 
-# Setup unit-test environment
-# PKG_CHECK_MODULES([talloc], [], [], [exit 1])
-AC_CHECK_LIB([talloc], [_talloc])
+# Find talloc
+AC_CHECK_LIB([talloc], [_talloc], [], [echo 'Talloc is required' >&2; exit 1])
 
 # Output files & status
 AC_CONFIG_HEADERS([config.h])

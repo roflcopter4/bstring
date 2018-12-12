@@ -21,7 +21,7 @@ AC_INIT([Bstring], [major_version.minor_version.micro_version],
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE([1.9 subdir-objects foreign -Wno-portability])
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
-AC_CONFIG_SRCDIR([bstring/bstrlib.h])
+# AC_CONFIG_SRCDIR([bstring/bstrlib.h])
 
 # Initialize Libtool
 LT_PREREQ([2.2])
@@ -90,17 +90,8 @@ AC_FUNC_REALLOC
 AC_CHECK_FUNCS([memchr memmove memset strcasecmp strstr vasprintf err])
 
 # Setup unit-test environment
-PKG_CHECK_MODULES([CHECK], [check >= 0.9],
-		  [have_check=yes
-		   VALGRIND_ENVIRONMENT="CK_FORK=no"
-		   GDB_ENVIRONMENT="CK_FORK=no"
-		   # Some versions of the Check header file use
-		   # GNU-style token pasting.
-		   AX_TRY_CFLAGS([-Wno-gnu],
-				 [CHECK_CFLAGS="$CHECK_CFLAGS -Wno-gnu"])],
-		  [have_check=no
-		   AC_MSG_WARN([Unable to run unit tests.])])
-AM_CONDITIONAL([HAVE_CHECK], [test "x$have_check" = "xyes"])
+# PKG_CHECK_MODULES([talloc], [], [], [exit 1])
+AC_CHECK_LIB([talloc], [_talloc])
 
 # Output files & status
 AC_CONFIG_HEADERS([config.h])

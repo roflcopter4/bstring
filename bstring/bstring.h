@@ -97,7 +97,10 @@ BSTR_PUBLIC bstring *b_fromcstr_alloc(unsigned mlen, const char *str);
  * overwritten by any of the standard bstring api functions (and even the
  * standard c library functions).
  */
-BSTR_PUBLIC bstring *b_alloc_null(unsigned len);
+BSTR_PUBLIC bstring *b_create(unsigned len);
+
+/* Backwards compatibility */
+#define b_alloc_null b_create
 
 /**
  * Create a bstring whose contents are described by the contiguous buffer
@@ -186,18 +189,6 @@ BSTR_PUBLIC int b_assign_blk(bstring *a, const void *buf, unsigned len);
  */
 BSTR_PUBLIC int b_free(bstring *bstr);
 
-#if 0
-INLINE int
-__b_destroy(bstring **bstr)
-{
-        const int ret = b_free(*bstr);
-        if (ret == BSTR_OK)
-                *bstr = NULL;
-        return ret;
-}
-#define b_destroy(BSTR) (__b_destroy(&(BSTR)))
-#endif
-
 #define b_destroy(BSTR) ((b_free(BSTR) == BSTR_OK) ? ((BSTR) = NULL) : (NULL))
 
 
@@ -261,8 +252,12 @@ BSTR_PUBLIC int b_alloc(bstring *bstr, unsigned olen);
  */
 BSTR_PUBLIC int b_allocmin(bstring *bstr, unsigned len);
 
-
-INLINE int b_growby(bstring *bstr, unsigned len)
+#ifndef __GNUC__
+static inline
+#else
+extern inline __attribute__((__always_inline__, __gnu_inline__))
+#endif
+int b_growby(bstring *bstr, unsigned len)
 {
         return b_alloc(bstr, bstr->mlen + len);
 }
@@ -470,7 +465,7 @@ BSTR_PUBLIC int64_t b_strrchrp(const bstring *bstr, int ch, unsigned pos);
  *
  * Returns the position of the found character or BSTR_ERR if it is not found.
  */
-#define b_strrchr(b, c) b_strrchrp((b), (c), ((b)->slen - 1u))
+#define b_strrchr(b, c) b_strrchrp((b), (c), ((b)->slen - 1U))
 
 /**
  * Search for the first position in b0 starting from pos or after, in which
@@ -700,10 +695,10 @@ BSTR_PUBLIC int b_formata(bstring *bstr, const char *fmt, ...) BSTR_PRINTF(2, 3)
  * Like b_format but takes a va_list instead a varargs. b_format and
  * b_format_assign simply pass through to this function.
  */
-BSTR_PUBLIC bstring *b_vformat(const char *fmt, va_list arglist);
+BSTR_PUBLIC bstring *b_vformat(const char *fmt, va_list arglist) BSTR_PRINTF(1, 0);
 
-BSTR_PUBLIC int b_vformat_assign(bstring *bstr, const char *fmt, va_list arglist);
-BSTR_PUBLIC int b_vformata(bstring *bstr, const char *fmt, va_list arglist);
+BSTR_PUBLIC int b_vformat_assign(bstring *bstr, const char *fmt, va_list arglist) BSTR_PRINTF(2, 0);
+BSTR_PUBLIC int b_vformata(bstring *bstr, const char *fmt, va_list arglist) BSTR_PRINTF(2, 0);
 
 
 /*======================================================================================*/
@@ -836,8 +831,19 @@ BSTR_PUBLIC int b_reada(bstring *bstr, bNread read_ptr, void *parm);
  *
  * Note: bstrings which are write protected cannot be destroyed via bdestroy.
  */
+#ifdef __GNUC__
+#define b_writeprotect(BSTR_)                                               \
+        __extension__({                                                     \
+                _Pragma("GCC diagnostic push");                             \
+                _Pragma("GCC diagnostic ignored \"-Waddress\"");            \
+                if (BSTR_)                                                  \
+                        (BSTR_)->flags &= (~((uint8_t)BSTR_WRITE_ALLOWED)); \
+                _Pragma("GCC diagnostic pop");                              \
+        })
+#else
 #define b_writeprotect(BSTR_) \
         ((BSTR_) ? ((BSTR_)->flags &= (~((uint8_t)BSTR_WRITE_ALLOWED))) : 0)
+#endif
 
 /**
  * Allow bstring to be written to via the bstrlib API.
@@ -851,14 +857,27 @@ BSTR_PUBLIC int b_reada(bstring *bstr, bNread read_ptr, void *parm);
  * by one more than necessary for every call to bwriteallow interleaved with any
  * bstring API which writes to this bstring.
  */
-#define b_writeallow(BSTR_) \
+#ifdef __GNUC__
+#define b_writeallow(BSTR_)                                      \
+        __extension__({                                          \
+                _Pragma("GCC diagnostic push");                  \
+                _Pragma("GCC diagnostic ignored \"-Waddress\""); \
+                if (BSTR_)                                       \
+                        (BSTR_)->flags |= BSTR_WRITE_ALLOWED;    \
+                _Pragma("GCC diagnostic pop");                   \
+        })
+#else
+#  define b_writeallow(BSTR_) \
         ((BSTR_) ? ((BSTR_)->flags |= BSTR_WRITE_ALLOWED) : 0)
+#endif
 
 /**
  * Returns 1 if the bstring is write protected, otherwise 0 is returned.
  */
 #define b_iswriteprotected(BSTR_) \
         ((BSTR_) && (((BSTR_)->flags & BSTR_WRITE_ALLOWED) == 0))
+
+#define BSTR_NULL_INIT ((bstring[1]){{NULL, 0, 0, 0}})
 
 /* 
  * Cleanup

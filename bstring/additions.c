@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <sys/stat.h>
+#include <talloc.h>
 
 #include "bstring.h"
 
@@ -45,7 +46,7 @@
 */
 
 static inline char *
-strsep(char **stringp, const char *delim)
+BSTRING_strsep(char **stringp, const char *delim)
 {
         const char *delimp;
         char       *ptr, *tok;
@@ -70,31 +71,59 @@ strsep(char **stringp, const char *delim)
         }
         /* NOTREACHED */
 }
-#endif
 
-#if 0
-static char *
-_memsep(char **stringp, const unsigned len, const char *delim)
+#define strsep BSTRING_strsep
+
+int
+BSTRING_dprintf(int fd, char *fmt, ...)
 {
-        char *ptr = *stringp;
+        FILE   *fds;
+        va_list ap;
+        int     ret;
+        int     fdx = _open_osfhandle(fd, 0);
 
-        if (ptr == NULL)
-                return NULL;
+        va_start(ap, fmt);
+        fdx = dup(fdx);
 
-        for (unsigned i = 0; i < len; ++i) {
-                const char *delimp = delim;
-                do {
-                        if (*delimp++ == ptr[i]) {
-                                ptr[i]   = '\0';
-                                *stringp = ptr + i + 1u;
-                                return ptr;
-                        }
-                } while (*delimp != '\0');
+        if ((fds = fdopen(fdx, "w")) == NULL) {
+                va_end(ap);
+                return (-1);
         }
+        ret = vfprintf(fds, fmt, ap);
+        fclose(fds);
+        va_end(ap);
 
-        return NULL;
+        return (ret);
 }
 #endif
+
+#ifndef HAVE_ERR
+__attribute__((__format__(gnu_printf, 2, 3))) void
+BSTRING_warn_(bool print_err, const char *fmt, ...)
+{
+        va_list ap;
+        va_start(ap, fmt);
+        char buf[8192];
+        snprintf(buf, 8192, "%s\n", fmt);
+        va_end(ap);
+
+        /* if (print_err)
+                snprintf(buf, 8192, "%s: %s\n", fmt, strerror(errno));
+        else
+                snprintf(buf, 8192, "%s\n", fmt); */
+        /* vfprintf(stderr, buf, ap); */
+        if (print_err)
+                perror(buf);
+        else
+                fputs(buf, stderr);
+#  ifdef _WIN32
+        fflush(stderr);
+#  endif
+}
+#endif
+
+/*============================================================================*/
+/*============================================================================*/
 
 int
 b_memsep(bstring *dest, bstring *stringp, const char delim)
@@ -113,8 +142,8 @@ b_memsep(bstring *dest, bstring *stringp, const char delim)
         if (pos >= 0) {
                 dest->data[pos] = '\0';
                 dest->slen      = pos;
-                stringp->data   = stringp->data + pos + 1u;
-                stringp->slen  -= pos + 1u;
+                stringp->data   = stringp->data + pos + 1U;
+                stringp->slen  -= pos + 1U;
         } else {
                 dest->slen    = stringp->slen;
                 stringp->data = NULL;
@@ -133,23 +162,16 @@ b_split_char(bstring *tosplit, const int delim, const bool destroy)
         bstring *split = destroy ? tosplit : b_strcpy(tosplit);
         b_list  *ret   = b_list_create();
 
-        /* while (b_memsep(&buf, split, delim)) {
-                if (!buf.data || !split)
-                        abort();
-                b_list_append(&ret, b_strcpy(&buf));
-        } */
+        bstring *tok = BSTR_NULL_INIT;
+        bstring *buf = &(bstring){split->data, split->slen, 0, split->flags};
 
-        bstring tok[] = {{0, 0, NULL, 0}};
-        bstring buf[] = {{split->slen, 0, split->data, split->flags}};
-
-        while (b_memsep(tok, buf, delim)) {
-                b_list_append(&ret, b_fromblk(tok->data, tok->slen));
+        while (b_memsep(tok, buf, (char)delim)) {
+                b_list_append(ret, b_fromblk(tok->data, tok->slen));
         }
 
         b_destroy(split);
         return ret;
 }
-
 
 /*============================================================================*/
 /* SOME CRAPPY ADDITIONS! */
@@ -157,7 +179,7 @@ b_split_char(bstring *tosplit, const int delim, const bool destroy)
 
 
 void
-__b_fputs(FILE *fp, bstring *bstr, ...)
+_b_fwrite(FILE *fp, bstring *bstr, ...)
 {
         va_list va;
         va_start(va, bstr);
@@ -172,35 +194,36 @@ __b_fputs(FILE *fp, bstring *bstr, ...)
         va_end(va);
 }
 
-
 int
-__b_write(const int fd, bstring *bstr, ...)
+_b_write(const int fd, bstring *bstr, ...)
 {
-        va_list va;
-        va_start(va, bstr);
-        for (;;bstr = va_arg(va, bstring *)) {
+        va_list ap;
+        va_start(ap, bstr);
+        for (;;bstr = va_arg(ap, bstring *)) {
                 if (bstr) {
                         if (bstr->flags & BSTR_LIST_END)
                                 break;
                         if (bstr->data && bstr->slen > 0) {
                                 ssize_t n, total = 0;
+                                int     tmp;
                                 errno = 0;
                                 do {
                                         n = write(fd, bstr->data, bstr->slen);
-                                } while (n >= 0 && (total += n) != bstr->slen);
-                                if (errno)
-                                        return errno;
+                                } while (n > 0 && (unsigned)(total += n) < bstr->slen);
+                                if ((tmp = errno)) {
+                                        va_end(ap);
+                                        return tmp;
+                                }
                         }
                 }
         }
-        va_end(va);
+        va_end(ap);
 
         return BSTR_OK;
 }
 
-
 void
-__b_free_all(bstring **bstr, ...)
+_b_free_all(bstring **bstr, ...)
 {
         va_list va;
         va_start(va, bstr);
@@ -217,9 +240,8 @@ __b_free_all(bstring **bstr, ...)
         va_end(va);
 }
 
-
 bstring *
-__b_concat_all(const bstring *join, const int join_end, ...)
+_b_concat_all(const bstring *join, const int join_end, ...)
 {
         unsigned       size   = 0;
         const unsigned j_size = (join && join->data) ? join->slen : 0;
@@ -274,9 +296,8 @@ __b_concat_all(const bstring *join, const int join_end, ...)
         return dest;
 }
 
-
 int
-__b_append_all(bstring *dest, const bstring *join, const int join_end, ...)
+_b_append_all(bstring *dest, const bstring *join, const int join_end, ...)
 {
         unsigned       size   = dest->slen;
         const unsigned j_size = (join && join->data) ? join->slen : 0;
@@ -327,9 +348,16 @@ __b_append_all(bstring *dest, const bstring *join, const int join_end, ...)
         return (dest->slen == size) ? BSTR_OK : BSTR_ERR;
 }
 
-
 /*============================================================================*/
 
+int 
+b_strcmp_fast(const bstring *a, const bstring *b)
+{
+        if (a->slen == b->slen)
+                return memcmp(a->data, b->data, a->slen);
+        else
+                return a->slen - b->slen;
+}
 
 int
 b_strcmp_fast_wrap(const void *vA, const void *vB)
@@ -337,12 +365,8 @@ b_strcmp_fast_wrap(const void *vA, const void *vB)
         const bstring *sA = *(bstring const*const*const)(vA);
         const bstring *sB = *(bstring const*const*const)(vB);
 
-        if (sA->slen == sB->slen)
-                return memcmp(sA->data, sB->data, sA->slen);
-        else
-                return sA->slen - sB->slen;
+        return b_strcmp_fast(sA, sB);
 }
-
 
 int
 b_strcmp_wrap(const void *const vA, const void *const vB)
@@ -351,38 +375,38 @@ b_strcmp_wrap(const void *const vA, const void *const vB)
                         (*(bstring const*const*const)(vB)));
 }
 
-
 bstring *
 b_steal(void *blk, const unsigned len)
 {
         if (!blk || len == 0)
                 RETURN_NULL();
-        bstring *ret = xmalloc(sizeof *ret);
+        bstring *ret = talloc(NULL, bstring);
         *ret = (bstring){
             .slen  = len,
             .mlen  = len + 1,
             .data  = (uchar *)blk,
             .flags = BSTR_STANDARD,
         };
+        talloc_steal(ret, blk);
+        talloc_set_destructor(ret, b_free);
         return ret;
 }
-
 
 bstring *
 b_refblk(void *blk, const unsigned len)
 {
         if (!blk || len == 0)
                 RETURN_NULL();
-        bstring *ret = xmalloc(sizeof *ret);
+        bstring *ret = talloc(NULL, bstring);
         *ret = (bstring){
             .slen  = len,
             .mlen  = len,
             .data  = (uchar *)blk,
             .flags = BSTR_WRITE_ALLOWED | BSTR_FREEABLE
         };
+        talloc_set_destructor(ret, b_free);
         return ret;
 }
-
 
 bstring *
 b_clone(const bstring *const src)
@@ -390,7 +414,7 @@ b_clone(const bstring *const src)
         if (INVALID(src))
                 RETURN_NULL();
 
-        bstring *ret = xmalloc(sizeof *ret);
+        bstring *ret = talloc(NULL, bstring);
         *ret = (bstring){.slen  = src->slen,
                          .mlen  = src->mlen,
                          .flags = (src->flags & (~((uint8_t)BSTR_DATA_FREEABLE))),
@@ -398,9 +422,9 @@ b_clone(const bstring *const src)
         ret->flags |= BSTR_CLONE;
 
         b_writeprotect(ret);
+        talloc_set_destructor(ret, b_free);
         return ret;
 }
-
 
 bstring *
 b_clone_swap(bstring *src)
@@ -408,257 +432,20 @@ b_clone_swap(bstring *src)
         if (INVALID(src) || NO_WRITE(src))
                 RETURN_NULL();
 
-        bstring *ret = xmalloc(sizeof *ret);
+        bstring *ret = talloc(NULL, bstring);
         *ret = (bstring){.slen  = src->slen,
                          .mlen  = src->mlen,
                          .flags = src->flags,
                          .data  = src->data};
+        talloc_steal(ret, src->data);
 
         src->flags &= (~((uint8_t)BSTR_DATA_FREEABLE));
         src->flags |= BSTR_CLONE;
+
         b_writeprotect(src);
-
+        talloc_set_destructor(ret, b_free);
         return ret;
 }
-
-
-/*============================================================================*/
-
-
-void
-__b_list_dump(FILE *fp, const b_list *list, const char *listname)
-{
-        fprintf(fp, "Dumping list \"%s\"\n", listname);
-        for (unsigned i = 0; i < list->qty; ++i)
-                b_fputs(fp, list->lst[i], b_tmp("\n"));
-        fputc('\n', fp);
-}
-
-
-void
-__b_list_dump_fd(const int fd, const b_list *list, const char *listname)
-{
-        dprintf(fd, "Dumping list \"%s\"\n", listname);
-        for (unsigned i = 0; i < list->qty; ++i) {
-                if (!list->lst[i] || list->lst[i]->slen == 0)
-                        b_write(fd, B("(NULL)\n"));
-                else
-                        b_write(fd, list->lst[i], b_tmp("\n"));
-        }
-        write(fd, "\n", 1);
-}
-
-
-int
-b_list_append(b_list **listp, bstring *bstr)
-{
-        if (!listp || !*listp || !(*listp)->lst)
-                RUNTIME_ERROR();
-
-        if ((*listp)->qty == ((*listp)->mlen - 1))
-                (*listp)->lst = xrealloc((*listp)->lst, ((*listp)->mlen *= 2) *
-                                                          sizeof(*(*listp)->lst));
-        (*listp)->lst[(*listp)->qty++] = bstr;
-
-        return BSTR_OK;
-}
-
-int
-b_list_remove(b_list *list, const unsigned index)
-{
-        if (!list || !list->lst || index >= list->qty)
-                RUNTIME_ERROR();
-
-        b_destroy(list->lst[index]);
-        list->lst[index] = NULL;
-
-        memmove(list->lst + index, list->lst + index + 1, --list->qty - index);
-        return BSTR_OK;
-}
-
-
-b_list *
-b_list_copy(const b_list *list)
-{
-        if (!list || !list->lst)
-                RETURN_NULL();
-
-        b_list *ret = b_list_create_alloc(list->qty);
-
-        for (unsigned i = 0; i < list->qty; ++i) {
-                ret->lst[ret->qty] = b_strcpy(list->lst[i]);
-                b_writeallow(ret->lst[ret->qty]);
-                ++ret->qty;
-        }
-
-        return ret;
-}
-
-b_list *
-b_list_clone(const b_list *const list)
-{
-        if (!list || !list->lst)
-                RETURN_NULL();
-
-        b_list *ret = b_list_create_alloc(list->qty);
-
-        for (unsigned i = 0; i < list->qty; ++i) {
-                ret->lst[ret->qty] = b_clone(list->lst[i]);
-                ++ret->qty;
-        }
-
-        return ret;
-}
-
-
-b_list *
-b_list_clone_swap(b_list *list)
-{
-        if (!list || !list->lst)
-                RETURN_NULL();
-
-        b_list *ret = b_list_create_alloc(list->qty);
-
-        for (unsigned i = 0; i < list->qty; ++i) {
-                ret->lst[ret->qty] = b_clone_swap(list->lst[i]);
-                ++ret->qty;
-        }
-
-        return ret;
-}
-
-int
-b_list_writeprotect(b_list *list)
-{
-        if (!list || !list->lst)
-                RUNTIME_ERROR();
-
-        unsigned i;
-        B_LIST_FOREACH(list, bstr, i)
-                if (!INVALID(bstr))
-                        b_writeprotect(bstr);
-
-        return BSTR_OK;
-}
-
-int
-b_list_writeallow(b_list *list)
-{
-        if (!list || !list->lst)
-                RUNTIME_ERROR();
-
-        unsigned i;
-        B_LIST_FOREACH(list, bstr, i)
-                if (!INVALID(bstr))
-                        b_writeallow(bstr);
-
-        return BSTR_OK;
-}
-
-int
-b_list_merge(b_list **dest, b_list *src, const int flags)
-{
-        if (!dest || !*dest || !(*dest)->lst)
-                RUNTIME_ERROR();
-        if (!src || !src->lst)
-                RUNTIME_ERROR();
-        if (src->qty == 0)
-                return BSTR_ERR;
-
-        const unsigned size = ((*dest)->qty + src->qty);
-        if ((*dest)->mlen < size)
-                (*dest)->lst = xrealloc((*dest)->lst,
-                                (size_t)((*dest)->mlen = size) * sizeof(bstring *));
-
-        for (unsigned i = 0; i < src->qty; ++i)
-                (*dest)->lst[(*dest)->qty++] = src->lst[i];
-
-        if (flags & BSTR_M_DEL_SRC) {
-                xfree(src->lst);
-                xfree(src);
-        }
-        if (flags & BSTR_M_DEL_DUPS)
-                b_list_remove_dups(dest);
-        else if (flags & BSTR_M_SORT_FAST)
-                B_LIST_SORT_FAST(*dest);
-        if (!(flags & BSTR_M_SORT_FAST) && (flags & BSTR_M_SORT))
-                B_LIST_SORT(*dest);
-
-        return BSTR_OK;
-}
-
-
-int
-b_list_remove_dups(b_list **listp)
-{
-        if (!listp || !*listp || !(*listp)->lst || (*listp)->qty == 0)
-                RUNTIME_ERROR();
-
-        b_list *toks = b_list_create_alloc((*listp)->qty * 10);
-
-        for (unsigned i = 0; i < (*listp)->qty; ++i) {
-                b_list *tmp = b_strsep((*listp)->lst[i], " ", 0);
-                if (!tmp)
-                        continue;
-                for (unsigned x = 0; x < tmp->qty; ++x)
-                        b_list_append(&toks, tmp->lst[x]);
-                xfree(tmp->lst);
-                xfree(tmp);
-        }
-
-        b_list_destroy(*listp);
-
-        qsort(toks->lst, toks->qty, sizeof(bstring *), &b_strcmp_fast_wrap);
-
-        b_list *uniq = b_list_create_alloc(toks->qty);
-        uniq->lst[0] = toks->lst[0];
-        uniq->qty    = 1;
-        b_writeprotect(uniq->lst[0]);
-
-        for (unsigned i = 1; i < toks->qty; ++i) {
-                if (!b_iseq(toks->lst[i], toks->lst[i-1])) {
-                        uniq->lst[uniq->qty] = toks->lst[i];
-                        b_writeprotect(uniq->lst[uniq->qty]);
-                        ++uniq->qty;
-                }
-        }
-
-        b_list_destroy(toks);
-        for (unsigned i = 0; i < uniq->qty; ++i)
-                b_writeallow(uniq->lst[i]);
-
-        *listp = uniq;
-        return BSTR_OK;
-}
-
-
-bstring *
-b_list_join(const b_list *list, const bstring *sep)
-{
-        if (!list || !list->lst || list->qty == 0)
-                RETURN_NULL();
-        unsigned i;
-        unsigned total = 1;
-        unsigned seplen = (sep != NULL) ? sep->slen : 0;
-
-        B_LIST_FOREACH (list, str, i)
-                total += str->slen + seplen;
-        
-        bstring *ret = b_alloc_null(total);
-
-        B_LIST_FOREACH (list, str, i) {
-                memcpy(ret->data + ret->slen, str->data, str->slen);
-                ret->slen += str->slen;
-                if (sep != NULL) {
-                        memcpy(ret->data + ret->slen, sep->data, sep->slen);
-                        ret->slen += sep->slen;
-                }
-        }
-
-        ret->data[ret->slen] = '\0';
-        return ret;
-}
-
 
 /*============================================================================*/
 /* Proper strstr replacements */
@@ -681,27 +468,25 @@ b_strstr(const bstring *const haystack, const bstring *needle, const unsigned po
         return (int64_t)psub(ptr, haystack->data);
 }
 
-
 b_list *
 b_strsep(bstring *ostr, const char *const delim, const int refonly)
 {
         if (INVALID(ostr) || NO_WRITE(ostr) || !delim)
                 RETURN_NULL();
 
-        b_list *ret   = b_list_create();
-        bstring tok[] = {{0, 0, NULL, 0}};
-        bstring str[] = {{ostr->slen, 0, ostr->data, ostr->flags}};
+        b_list  *ret  = b_list_create();
+        bstring *tok = BSTR_NULL_INIT;
+        bstring *str = &(bstring){ostr->data, ostr->slen, 0, ostr->flags};
 
         if (refonly)
                 while (b_memsep(tok, str, delim[0]))
-                        b_list_append(&ret, b_refblk(tok->data, tok->slen));
+                        b_list_append(ret, b_refblk(tok->data, tok->slen));
         else
                 while (b_memsep(tok, str, delim[0]))
-                        b_list_append(&ret, b_fromblk(tok->data, tok->slen));
+                        b_list_append(ret, b_fromblk(tok->data, tok->slen));
 
         return ret;
 }
-
 
 /*============================================================================*/
 /* strpbrk */
@@ -720,9 +505,8 @@ b_strpbrk_pos(const bstring *bstr, const unsigned pos, const bstring *delim)
                         if (bstr->data[i] == delim->data[x])
                                 return (int64_t)i;
 
-        return (-1ll);
+        return (-1LL);
 }
-
 
 int64_t
 b_strrpbrk_pos(const bstring *bstr, const unsigned pos, const bstring *delim)
@@ -738,9 +522,8 @@ b_strrpbrk_pos(const bstring *bstr, const unsigned pos, const bstring *delim)
                                 return (int64_t)i;
         } while (i-- > 0);
 
-        return (-1ll);
+        return (-1LL);
 }
-
 
 /*============================================================================*/
 /* Path operations */
@@ -768,7 +551,6 @@ b_dirname(const bstring *path)
         RETURN_NULL();
 }
 
-
 bstring *
 b_basename(const bstring *path)
 {
@@ -785,11 +567,25 @@ b_basename(const bstring *path)
 #endif
 
         if (pos >= 0)
-                return b_fromblk(path->data + pos + 1u, path->slen - pos - 1u);
+                return b_fromblk(path->data + pos + 1U, path->slen - pos - 1U);
 
         RETURN_NULL();
 }
 
+bstring *
+b_regularize_path(bstring *path)
+{
+        if (INVALID(path) || NO_WRITE(path))
+                RETURN_NULL();
+        
+#if defined(_WIN32) || defined(_WIN64)
+        for (unsigned i = 0; i < path->slen; ++i)
+                if (path->data[i] == '/')
+                        path->data[i] = '\\';
+#endif
+
+        return path;
+}
 
 bstring *
 b_quickread(const char *const __restrict fmt, ...)
@@ -825,6 +621,158 @@ b_quickread(const char *const __restrict fmt, ...)
         return ret;
 }
 
+#define INIT_READ ((size_t)(1LLU << 20))
+
+bstring *
+b_read_stdin(void)
+{
+        bstring *buf = b_create(INIT_READ + 1LLU);
+
+        for (;;) {
+                size_t nread = fread(buf->data + buf->slen, 1, INIT_READ, stdin);
+                if (nread > 0) {
+                        buf->slen += nread;
+                        if (feof(stdin))
+                                break;
+                        /* buf = xrealloc(buf, total + INIT_READ); */
+                        b_alloc(buf, buf->slen + INIT_READ);
+                } else {
+                        break;
+                }
+        }
+
+        buf->data[buf->slen] = '\0';
+        return buf;
+}
+
+#if 0
+#define INIT_READ ((size_t)(1 << 20))
+
+static size_t
+getstdin(char **dest, FILE *fp)
+{
+        size_t  total = 0;
+        char   *buf   = xmalloc(INIT_READ+1LLU);
+        
+        for (;;) {
+                size_t nread = fread(buf + total, 1, INIT_READ, fp);
+                if (nread > 0) {
+                        total += nread;
+                        if (feof(fp))
+                                break;
+                        char *tmp = realloc(buf, total + INIT_READ);
+                        buf       = tmp;
+                } else {
+                        break;
+                }
+        }
+
+        buf[total] = '\0';
+        *dest      = buf;
+        return total;
+}
+
+bstring *
+b_read_fd(const int fd)
+{
+        FILE *fp = fdopen(fd, "rb");
+        char *buf;
+        size_t total = getstdin(&buf, fp);
+        fclose(fp);
+
+        bstring *ret = xmalloc(sizeof *ret);
+        *ret = (bstring){total, total+1, (uchar *)buf, BSTR_STANDARD};
+        return ret;
+}
+#endif
+
+#define INIT_READ ((size_t)(8192LLU))
+#ifdef DOSISH
+#  define SSIZE_T size_t
+#else
+#  define SSIZE_T ssize_t
+#endif
+
+bstring *
+b_read_fd(const int fd)
+{
+        bstring *ret = b_alloc_null(INIT_READ + 1U);
+
+        for (;;) {
+                SSIZE_T nread = read(fd, (ret->data + ret->slen), INIT_READ);
+                if (nread > 0) {
+                        ret->slen += nread;
+                        if ((size_t)nread < INIT_READ) {
+                                /* eprintf("breaking\n"); */
+                                break;
+                        }
+                        b_growby(ret, INIT_READ);
+                } else {
+                        break;
+                }
+        }
+
+        ret->data[ret->slen] = '\0';
+        return ret;
+}
+
+
+#if 0
+bstring *
+b_read_fd(const int fd)
+{
+        /* size_t   total = 0; */
+        bstring *ret   = b_alloc_null(INIT_READ+1LLU);
+        /* FILE    *fp    = fdopen(fd, "rb"); */
+        /* bstring *ret   = xmalloc(sizeof *ret); */
+        /* *ret = (bstring){0, INIT_READ+1LLU, xcalloc(1, INIT_READ+1LLU), BSTR_STANDARD}; */
+
+        int ch = 0;
+        while (read(fd, &ch, 1) != EOF)
+                b_conchar(ret, ch);
+#if 0
+        for (;;) {
+                size_t nread = fread(ret->data + total, 1, INIT_READ, fp);
+                /* ssize_t nread = read(fd, ret->data + total, INIT_READ); */
+                /* if (nread >= 0) { */
+                total += nread;
+                if (feof(fp))
+                        break;
+                /* b_alloc(ret, total + INIT_READ); */
+                b_growby(ret, INIT_READ);
+                /* } else { */
+                        /* break; */
+                /* } */
+        }
+#endif
+
+        /* fclose(fp); */
+        /* ret->slen        = total; */
+        return ret;
+}
+#endif
+
+/*============================================================================*/
+/* String Modiying  */
+/*============================================================================*/
+
+int
+b_insert_char(bstring *str, const unsigned location, const int ch)
+{
+        if (location >= str->slen)
+                RUNTIME_ERROR();
+        if (INVALID(str) || NO_WRITE(str))
+                RUNTIME_ERROR();
+        if (str->mlen <= str->slen - 1)
+                b_growby(str, 1);
+
+        memmove((str->data + location + 1), (str->data + location),
+                (str->slen - location + 1));
+        str->data[location] = (uchar)ch;
+        ++str->slen;
+
+        return 0;
+}
 
 /*============================================================================*/
 /* Minor helper functions */
@@ -854,7 +802,7 @@ b_ll2str(const long long value)
 
         /* Compute length and add null term. */
         *rev--    = (uchar)'\0';
-        ret->slen = psub(rev, ret->data) + 1u;
+        ret->slen = psub(rev, ret->data) + 1U;
 
         /* Reverse the string. */
         while (fwd < rev) {
@@ -866,7 +814,6 @@ b_ll2str(const long long value)
         return ret;
 }
 
-
 static unsigned
 _tmp_ll2bstr(bstring *bstr, const long long value)
 {
@@ -875,14 +822,14 @@ _tmp_ll2bstr(bstring *bstr, const long long value)
         rev = fwd = bstr->data;
 
         do {
-                *rev++ = (uchar)('0' + (inv % 10llu));
-                inv    = (inv / 10llu);
+                *rev++ = (uchar)('0' + (inv % 10LLU));
+                inv    = (inv / 10LLU);
         } while (inv);
         if (value < 0)
                 *rev++ = (uchar)'-';
 
         *rev--     = (uchar)'\0';
-        bstr->slen = psub(rev, bstr->data) + 1u;
+        bstr->slen = psub(rev, bstr->data) + 1U;
         while (fwd < rev) {
                 const uchar swap = *fwd;
                 *fwd++           = *rev;
@@ -892,7 +839,6 @@ _tmp_ll2bstr(bstring *bstr, const long long value)
         return bstr->slen;
 }
 
-
 static unsigned
 _tmp_ull2bstr(bstring *bstr, const unsigned long long value)
 {
@@ -901,12 +847,12 @@ _tmp_ull2bstr(bstring *bstr, const unsigned long long value)
         rev = fwd = bstr->data;
 
         do {
-                *rev++ = (uchar)('0' + (inv % 10llu));
-                inv    = (inv / 10llu);
+                *rev++ = (uchar)('0' + (inv % 10LLU));
+                inv    = (inv / 10LLU);
         } while (inv);
 
         *rev--     = (uchar)'\0';
-        bstr->slen = psub(rev, bstr->data) + 1u;
+        bstr->slen = psub(rev, bstr->data) + 1U;
         while (fwd < rev) {
                 const uchar swap = *fwd;
                 *fwd++           = *rev;
@@ -966,6 +912,49 @@ b_catblk_nonul(bstring *bstr, void *blk, const unsigned len)
         return BSTR_OK;
 }
 
+bool
+b_starts_with(const bstring *b0, const bstring *b1)
+{
+        if (INVALID(b0) || INVALID(b1))
+                RUNTIME_ERROR();
+        if (b0->slen < b1->slen)
+                return false;
+        return b_strncmp(b0, b1, b1->slen) == 0;
+}
+
+int
+b_strip_leading_ws(bstring *bstr)
+{
+        if (INVALID(bstr) || NO_WRITE(bstr))
+                RUNTIME_ERROR();
+        unsigned i;
+        for (i = 0; i < bstr->slen; ++i)
+                if (!isspace(bstr->data[i]))
+                        break;
+        if (i > 0) {
+                memmove(bstr->data, bstr->data + i, bstr->slen + 1 - i);
+                bstr->slen -= i;
+        }
+        return 0;
+}
+
+int
+b_strip_trailing_ws(bstring *bstr)
+{
+        if (INVALID(bstr) || NO_WRITE(bstr))
+                RUNTIME_ERROR();
+        if (bstr->slen == 0)
+                return 0;
+        unsigned i;
+        for (i = bstr->slen - 1; i > 0; --i)
+                if (!isspace(bstr->data[i]))
+                        break;
+        if (i++ > 0) {
+                bstr->data[i] = '\0';
+                bstr->slen = i;
+        }
+        return 0;
+}
 
 /*============================================================================*/
 /* Simple printf analogues. */
@@ -981,7 +970,6 @@ _b_sprintf(const bstring *fmt, ...)
         va_end(ap);
         return ret;
 }
-
 
 bstring *
 _b_vsprintf(const bstring *fmt, va_list args)
@@ -1003,7 +991,7 @@ _b_vsprintf(const bstring *fmt, va_list args)
 
         for (; i < fmt->slen; ++pcnt) {
                 int     islong = 0;
-                pos[pcnt] = b_strchrp(fmt, '%', i) + 1ll;
+                pos[pcnt] = b_strchrp(fmt, '%', i) + 1LL;
                 if (pos[pcnt] == 0)
                         break;
 
@@ -1014,10 +1002,10 @@ _b_vsprintf(const bstring *fmt, va_list args)
                 case 's': {
                         bstring *next = va_arg(cpy, bstring *);
                         if (!next || !next->data)
-                                len = (len - 2u) + (sizeof("(null)") - 1u);
+                                len = (len - 2U) + (sizeof("(null)") - 1U);
                         else
-                                len = (len - 2u) + next->slen;
-                        i   = pos[pcnt] + 2;
+                                len = (len - 2U) + next->slen;
+                        i   = pos[pcnt] + 2LL;
 
                         break;
                 }
@@ -1030,9 +1018,9 @@ _b_vsprintf(const bstring *fmt, va_list args)
                                 tmp = b_fromcstr(next);
                         else
                                 tmp = b_fromlit("(null)");
-                        b_list_append(&c_strings, tmp);
+                        b_list_append(c_strings, tmp);
 
-                        len = (len - 2u) + tmp->slen;
+                        len = (len - 2U) + tmp->slen;
                         i   = pos[pcnt] + 2;
                         break;
                 }
@@ -1041,25 +1029,25 @@ _b_vsprintf(const bstring *fmt, va_list args)
                         switch (islong) {
                         case 0:
                                 (void)va_arg(cpy, int);
-                                len = (len - 2u) + 11u;
+                                len = (len - 2U) + 11U;
                                 i   = pos[pcnt] + 2;
                                 break;
                         case 1: (void)va_arg(cpy, long);
 #if INT_MAX == LONG_MAX
-                                len = (len - 3u) + 11u;
+                                len = (len - 3U) + 11U;
 #else
-                                len = (len - 3u) + 21u;
+                                len = (len - 3U) + 21U;
 #endif
                                 i   = pos[pcnt] + 3;
                                 break;
                         case 2:
                                 (void)va_arg(cpy, long long);
-                                len = (len - 4u) + 21u;
+                                len = (len - 4U) + 21U;
                                 i   = pos[pcnt] + 4;
                                 break;
                         case 3:
                                 (void)va_arg(cpy, size_t);
-                                len = (len - 3u) + 21u;
+                                len = (len - 3U) + 21U;
                                 i   = pos[pcnt] + 3;
                                 break;
                         default:
@@ -1090,13 +1078,13 @@ _b_vsprintf(const bstring *fmt, va_list args)
         }
 
         va_end(cpy);
-        bstring *ret = b_alloc_null(snapUpSize(len + 1u));
+        bstring *ret = b_create(snapUpSize(len + 1U));
         int64_t  x;
         pcnt = i = x = 0;
 
         for (; ; ++pcnt) {
                 const int64_t diff = (pos[pcnt] == 0) ? (int64_t)fmt->slen - x
-                                                      : pos[pcnt] - x - 1ll;
+                                                      : pos[pcnt] - x - 1LL;
                 if (diff >= 0)
                         memcpy(ret->data + i, fmt->data + x, diff);
                 
@@ -1133,7 +1121,7 @@ _b_vsprintf(const bstring *fmt, va_list args)
                 case 'd': {
                         uchar buf[INT64_MAX_CHARS + 1];
                         int n = 0;
-                        bstring tmp = {0, 0, buf, 0};
+                        bstring tmp = {buf, 0, 0, 0};
 
                         switch (islong) {
                         case 0: {
@@ -1171,7 +1159,7 @@ _b_vsprintf(const bstring *fmt, va_list args)
                 case 'u': {
                         uchar buf[INT64_MAX_CHARS + 1];
                         int n = 0;
-                        bstring tmp[] = {{0, 0, buf, 0}};
+                        bstring *tmp = &(bstring){buf, 0, 0, 0};
 
                         switch (islong) {
                         case 0: {
@@ -1236,7 +1224,6 @@ _b_vsprintf(const bstring *fmt, va_list args)
         return ret;
 }
 
-
 int
 _b_fprintf(FILE *out_fp, const bstring *fmt, ...)
 {
@@ -1247,7 +1234,6 @@ _b_fprintf(FILE *out_fp, const bstring *fmt, ...)
 
         return ret;
 }
-
 
 int
 _b_vfprintf(FILE *out_fp, const bstring *fmt, va_list args)
@@ -1264,7 +1250,6 @@ _b_vfprintf(FILE *out_fp, const bstring *fmt, va_list args)
         return ret;
 }
 
-
 int
 _b_dprintf(const int out_fd, const bstring *fmt, ...)
 {
@@ -1275,7 +1260,6 @@ _b_dprintf(const int out_fd, const bstring *fmt, ...)
 
         return ret;
 }
-
 
 int
 _b_vdprintf(const int out_fd, const bstring *fmt, va_list args)
@@ -1292,7 +1276,6 @@ _b_vdprintf(const int out_fd, const bstring *fmt, va_list args)
         return ret;
 }
 
-
 int
 _b_sprintfa(bstring *dest, const bstring *fmt, ...)
 {
@@ -1306,7 +1289,6 @@ _b_sprintfa(bstring *dest, const bstring *fmt, ...)
         return ret;
 }
 
-
 int
 _b_vsprintfa(bstring *dest, const bstring *fmt, va_list args)
 {
@@ -1317,15 +1299,15 @@ _b_vsprintfa(bstring *dest, const bstring *fmt, va_list args)
         if (INVALID(app))
                 RUNTIME_ERROR();
 
-        const unsigned newlen = snapUpSize(dest->slen + app->slen + 1u);
+        const unsigned newlen = snapUpSize(dest->slen + app->slen + 1U);
 
         if (dest->mlen >= newlen) {
                 memcpy(dest->data + dest->slen, app->data, app->slen);
         } else {
-                uchar *buf = xmalloc(newlen);
+                uchar *buf = talloc_size(dest, newlen);
                 memcpy(buf, dest->data, dest->slen);
                 memcpy(buf + dest->slen, app->data, app->slen);
-                xfree(dest->data);
+                talloc_free(dest->data);
                 dest->data = buf;
         }
 

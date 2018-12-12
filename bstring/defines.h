@@ -1,5 +1,5 @@
 #ifndef TOP_BSTRING_H
-#  error Never include this file manually. Include "bstring.h".
+#  error "Never include this file manually. Include `bstring.h'".
 #endif
 
 #ifndef BSTRLIB_DEFINES_H
@@ -8,7 +8,7 @@
 #if (__GNUC__ >= 4)
 #  define BSTR_PUBLIC  __attribute__((__visibility__("default")))
 #  define BSTR_PRIVATE __attribute__((__visibility__("hidden")))
-#  define INLINE       __attribute__((__always_inline__)) static inline
+#  define INLINE       __attribute__((__always_inline__, __gnu_inline__)) extern inline
 #  ifndef _GNU_SOURCE
 #    define _GNU_SOURCE
 #  endif
@@ -19,7 +19,11 @@
 #endif
 
 #if (__GNUC__ > 2) || (__GNUC__ == 2 && __GNUC_MINOR__ > 4)
-#  define BSTR_PRINTF(format, argument) __attribute__((__format__(__printf__, format, argument)))
+#  ifdef __clang__
+#    define BSTR_PRINTF(format, argument) __attribute__((__format__(__printf__, format, argument)))
+#  else
+#    define BSTR_PRINTF(format, argument) __attribute__((__format__(__gnu_printf__, format, argument)))
+#  endif
 #  define BSTR_UNUSED __attribute__((__unused__))
 #else
 #  define BSTR_PRINTF(format, argument)
@@ -45,18 +49,25 @@ typedef unsigned char uchar;
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(WIN32) || defined (__MINGW32__) || defined(__MINGW64__)
+//#  include <pthread_win32.h>
+#include <pthread.h>
+#else
+#  include <pthread.h>
+#endif
+
 #define BSTR_ERR (-1)
 #define BSTR_OK (0)
 #define BSTR_BS_BUFF_LENGTH_GET (0)
 
-#define BSTR_WRITE_ALLOWED 0x01u
-#define BSTR_FREEABLE      0x02u
-#define BSTR_DATA_FREEABLE 0x04u
-#define BSTR_LIST_END      0x08u
-#define BSTR_CLONE         0x10u
-#define BSTR_MASK_USR3     0x20u
-#define BSTR_MASK_USR2     0x40u
-#define BSTR_MASK_USR1     0x80u
+#define BSTR_WRITE_ALLOWED 0x01U
+#define BSTR_FREEABLE      0x02U
+#define BSTR_DATA_FREEABLE 0x04U
+#define BSTR_LIST_END      0x08U
+#define BSTR_CLONE         0x10U
+#define BSTR_MASK_USR3     0x20U
+#define BSTR_MASK_USR2     0x40U
+#define BSTR_MASK_USR1     0x80U
 
 #define BSTR_STANDARD (BSTR_WRITE_ALLOWED | BSTR_FREEABLE | BSTR_DATA_FREEABLE)
 
@@ -65,17 +76,17 @@ typedef struct bstring_s    bstring;
 typedef struct bstring_list b_list;
 
 struct bstring_s {
+        unsigned char *data;
         unsigned int   slen;
         unsigned int   mlen;
-        unsigned char *data;
         unsigned char  flags;
 };
 #pragma pack(pop)
 
 struct bstring_list {
+        bstring **lst;
         unsigned  qty;
         unsigned  mlen;
-        bstring **lst;
 };
 
 #ifdef __cplusplus

@@ -40,6 +40,8 @@
 
 #include "bstring.h"
 
+#include <talloc.h>
+
 
 /**
  * Compute the snapped size for a given requested size.
@@ -148,15 +150,15 @@ b_alloc(bstring *bstr, const unsigned olen)
                 if (7 * bstr->mlen < 8 * bstr->slen) {
                         /* If slen is close to mlen in size then use realloc
                          * to reduce the memory defragmentation */
-                        tmp = xrealloc(bstr->data, len);
+                        tmp = talloc_realloc_size(bstr, bstr->data, len);
                 } else {
                         /* If slen is not close to mlen then avoid the penalty
                          * of copying the extra bytes that are allocated, but
                          * not considered part of the string */
-                        tmp = xmalloc(len);
+                        tmp = talloc_size(bstr, len);
                         if (bstr->slen)
                                 memcpy(tmp, bstr->data, bstr->slen);
-                        xfree(bstr->data);
+                        talloc_free(bstr->data);
                 }
 
                 bstr->data             = tmp;
@@ -182,7 +184,7 @@ b_allocmin(bstring *bstr, unsigned len)
                 len = bstr->slen + 1;
 
         if (len != bstr->mlen) {
-                uchar *buf      = xrealloc(bstr->data, (size_t)len);
+                uchar *buf      = talloc_realloc_size(NULL, bstr->data, (size_t)len);
                 buf[bstr->slen] = (uchar)'\0';
                 bstr->data      = buf;
                 bstr->mlen      = len;
@@ -204,7 +206,7 @@ b_free(bstring *bstr)
                 /* RUNTIME_ERROR(); */
 
         if (bstr->data && (bstr->flags & BSTR_DATA_FREEABLE))
-                xfree(bstr->data);
+                talloc_free(bstr->data);
 
         bstr->data = NULL;
         bstr->slen = bstr->mlen = (-1);
@@ -213,7 +215,7 @@ b_free(bstring *bstr)
                 return BSTR_ERR;
                 /* RUNTIME_ERROR(); */
 
-        xfree(bstr);
+        talloc_free(bstr);
         return BSTR_OK;
 }
 
@@ -230,13 +232,14 @@ b_fromcstr(const char *const str)
         if (max <= size)
                 RETURN_NULL();
 
-        bstring *bstr = xmalloc(sizeof *bstr);
+        bstring *bstr = talloc(NULL, bstring);
         bstr->slen    = size;
         bstr->mlen    = max;
-        bstr->data    = xmalloc(bstr->mlen);
+        bstr->data    = talloc_size(bstr, bstr->mlen);
         bstr->flags   = BSTR_STANDARD;
 
         memcpy(bstr->data, str, size + 1);
+        talloc_set_destructor(bstr, b_free);
         return bstr;
 }
 
@@ -253,13 +256,13 @@ b_fromcstr_alloc(const unsigned mlen, const char *const str)
         if (max <= size)
                 RETURN_NULL();
 
-        bstring *bstr = xmalloc(sizeof *bstr);
+        bstring *bstr = talloc(NULL, bstring);
         bstr->slen    = size;
         if (max < mlen)
                 max = mlen;
 
         bstr->mlen  = max;
-        bstr->data  = xmalloc(bstr->mlen);
+        bstr->data  = talloc_size(bstr, bstr->mlen);
         bstr->flags = BSTR_STANDARD;
 
         memcpy(bstr->data, str, size + 1);
@@ -273,30 +276,32 @@ b_fromblk(const void *blk, const unsigned len)
         if (!blk)
                 RETURN_NULL();
 
-        bstring *bstr = xmalloc(sizeof *bstr);
+        bstring *bstr = talloc(NULL, bstring);
         bstr->slen    = len;
         bstr->mlen    = snapUpSize(len + (2 - (len != 0)));;
-        bstr->data    = xmalloc(bstr->mlen);
+        bstr->data    = talloc_size(bstr, bstr->mlen);
         bstr->flags   = BSTR_STANDARD;
 
         if (len > 0)
                 memcpy(bstr->data, blk, len);
         bstr->data[len] = (uchar)'\0';
+        talloc_set_destructor(bstr, b_free);
 
         return bstr;
 }
 
 
 bstring *
-b_alloc_null(const unsigned len)
+b_create(const unsigned len)
 {
         int safelen   = len + 1;
-        bstring *bstr = xmalloc(sizeof *bstr);
+        bstring *bstr = talloc(NULL, bstring);
         bstr->slen    = 0;
         bstr->mlen    = safelen;
         bstr->flags   = BSTR_STANDARD;
-        bstr->data    = xmalloc(safelen);
+        bstr->data    = talloc_size(bstr, safelen);
         bstr->data[0] = (uchar)'\0';
+        talloc_set_destructor(bstr, b_free);
 
         return bstr;
 }
@@ -307,7 +312,7 @@ b_bstr2cstr(const bstring *bstr, const char nul)
 {
         if (INVALID(bstr))
                 RETURN_NULL();
-        char *buf = xmalloc(bstr->slen + 1);
+        char *buf = talloc_size(NULL, bstr->slen + 1);
 
         if (nul == 0) {
                 /* Don't bother trying to replace nul characters with anything,
@@ -327,7 +332,7 @@ b_bstr2cstr(const bstring *bstr, const char nul)
 int
 b_cstrfree(char *buf)
 {
-        xfree(buf);
+        talloc_free(buf);
         return BSTR_OK;
 }
 
@@ -436,13 +441,13 @@ b_strcpy(const bstring *bstr)
         if (INVALID(bstr))
                 RETURN_NULL();
 
-        bstring  *b0   = xmalloc(sizeof(bstring));
+        bstring  *b0   = talloc(NULL, bstring);
         unsigned  size = snapUpSize(bstr->slen + 1);
-        b0->data       = xmalloc(size);
+        b0->data       = talloc_size(b0, size);
 
         if (!b0->data) {
                 size     = bstr->slen + 1;
-                b0->data = xmalloc(size);
+                b0->data = talloc_size(b0, size);
         }
         b0->mlen  = size;
         b0->slen  = bstr->slen;
@@ -452,6 +457,7 @@ b_strcpy(const bstring *bstr)
                 memcpy(b0->data, bstr->data, bstr->slen);
         b0->data[b0->slen] = (uchar)'\0';
 
+        talloc_set_destructor(b0, b_free);
         return b0;
 }
 
@@ -994,16 +1000,13 @@ b_vformat(const char *const fmt, va_list arglist)
 {
         if (!fmt || !arglist)
                 RETURN_NULL();
-        unsigned total;
         bstring *buff;
 
 #ifdef HAVE_VASPRINTF
-        char *tmp   = NULL;
-        total       = xvasprintf(&tmp, fmt, arglist);
-        buff        = xmalloc(sizeof *buff);
-        buff->data  = (uchar *)tmp;
-        buff->slen  = total;
-        buff->mlen  = total + 1;
+        buff        = talloc(NULL, bstring);
+        buff->data  = (uchar *)talloc_vasprintf(buff, fmt, arglist);
+        buff->slen  = strlen((char *)buff->data);
+        buff->mlen  = buff->slen + 1;
         buff->flags = BSTR_STANDARD;
 #else
         /*
@@ -1014,6 +1017,8 @@ b_vformat(const char *const fmt, va_list arglist)
          * return the result that would have been printed if enough space were
          * available, so in theory this should take at most two attempts.
          */
+        unsigned total;
+
         if ((total = (2 * strlen(fmt))) < START_VSNBUFF)
                 total = START_VSNBUFF;
         buff = b_alloc_null(total + 2);
@@ -1045,6 +1050,7 @@ b_vformat(const char *const fmt, va_list arglist)
         }
 #endif
 
+        talloc_set_destructor(buff, b_free);
         return buff;
 }
 

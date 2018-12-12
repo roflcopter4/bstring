@@ -22,32 +22,6 @@ pkginclude_HEADERS =    \
     bstring/additions.h \
     bstring/defines.h
 
-if HAVE_CHECK
-TESTS = $(check_PROGRAMS)
-check_PROGRAMS =     \
-	tests/bstest \
-	tests/testaux
-
-tests_bstest_SOURCES = tests/bstest.c
-tests_bstest_CFLAGS = -I$(top_srcdir)/bstring $(CHECK_CFLAGS)
-tests_bstest_LDFLAGS = $(CHECK_LIBS)
-tests_bstest_LDADD = bstring/libbstring.la
-
-tests_testaux_SOURCES = tests/testaux.c
-tests_testaux_CFLAGS = -I$(top_srcdir)/bstring $(CHECK_CFLAGS)
-tests_testaux_LDFLAGS = $(CHECK_LIBS)
-tests_testaux_LDADD = bstring/libbstring.la
-endif
-
-# Documentation setup
-DOXYGEN_DOXYFILE = $(top_srcdir)/doc/Doxyfile
-include $(top_srcdir)/m4/doxygen.mk
-
-# Test targets
-include $(top_srcdir)/m4/valgrind.mk
-include $(top_srcdir)/m4/check.mk
-include $(top_srcdir)/m4/gdb.mk
-
 # Install pkg-config scripts
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = bstring.pc

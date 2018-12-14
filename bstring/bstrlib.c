@@ -146,6 +146,7 @@ b_alloc(bstring *bstr, const unsigned olen)
                 if (len <= bstr->mlen)
                         return BSTR_OK;
 
+#if 0
                 /* Assume probability of a non-moving realloc is 0.125 */
                 if (7 * bstr->mlen < 8 * bstr->slen) {
                         /* If slen is close to mlen in size then use realloc
@@ -160,7 +161,9 @@ b_alloc(bstring *bstr, const unsigned olen)
                                 memcpy(tmp, bstr->data, bstr->slen);
                         talloc_free(bstr->data);
                 }
+#endif
 
+                tmp = talloc_realloc_size(bstr, bstr->data, len);
                 bstr->data             = tmp;
                 bstr->mlen             = len;
                 bstr->data[bstr->slen] = (uchar)'\0';

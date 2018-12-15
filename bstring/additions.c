@@ -621,7 +621,7 @@ b_quickread(const char *const __restrict fmt, ...)
         return ret;
 }
 
-#define INIT_READ ((size_t)(1LLU << 20))
+#define INIT_READ ((size_t)(8192LLU))
 
 bstring *
 b_read_stdin(void)
@@ -686,7 +686,6 @@ b_read_fd(const int fd)
 }
 #endif
 
-#define INIT_READ ((size_t)(8192LLU))
 #ifdef DOSISH
 #  define SSIZE_T size_t
 #else

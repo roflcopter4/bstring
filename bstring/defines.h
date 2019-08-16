@@ -8,7 +8,7 @@
 #if (__GNUC__ >= 4)
 #  define BSTR_PUBLIC  __attribute__((__visibility__("default")))
 #  define BSTR_PRIVATE __attribute__((__visibility__("hidden")))
-#  define INLINE       __attribute__((__always_inline__, __gnu_inline__)) extern inline
+#  define INLINE       __attribute__((__always_inline__)) static inline
 #  ifndef _GNU_SOURCE
 #    define _GNU_SOURCE
 #  endif
@@ -76,17 +76,18 @@ typedef struct bstring_s    bstring;
 typedef struct bstring_list b_list;
 
 struct bstring_s {
-        unsigned char *data;
         unsigned int   slen;
         unsigned int   mlen;
+        unsigned char *data;
         unsigned char  flags;
 };
 #pragma pack(pop)
 
 struct bstring_list {
-        bstring **lst;
         unsigned  qty;
         unsigned  mlen;
+        bstring **lst;
+        pthread_rwlock_t lock;
 };
 
 #ifdef __cplusplus

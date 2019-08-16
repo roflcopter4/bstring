@@ -97,10 +97,7 @@ BSTR_PUBLIC bstring *b_fromcstr_alloc(unsigned mlen, const char *str);
  * overwritten by any of the standard bstring api functions (and even the
  * standard c library functions).
  */
-BSTR_PUBLIC bstring *b_create(unsigned len);
-
-/* Backwards compatibility */
-#define b_alloc_null b_create
+BSTR_PUBLIC bstring *b_alloc_null(unsigned len);
 
 /**
  * Create a bstring whose contents are described by the contiguous buffer
@@ -189,6 +186,18 @@ BSTR_PUBLIC int b_assign_blk(bstring *a, const void *buf, unsigned len);
  */
 BSTR_PUBLIC int b_free(bstring *bstr);
 
+#if 0
+INLINE int
+__b_destroy(bstring **bstr)
+{
+        const int ret = b_free(*bstr);
+        if (ret == BSTR_OK)
+                *bstr = NULL;
+        return ret;
+}
+#define b_destroy(BSTR) (__b_destroy(&(BSTR)))
+#endif
+
 #define b_destroy(BSTR) ((b_free(BSTR) == BSTR_OK) ? ((BSTR) = NULL) : (NULL))
 
 
@@ -252,10 +261,10 @@ BSTR_PUBLIC int b_alloc(bstring *bstr, unsigned olen);
  */
 BSTR_PUBLIC int b_allocmin(bstring *bstr, unsigned len);
 
-#ifndef __GNUC__
-static inline
+#ifndef __always_inline
+extern __inline__ __attribute__((__always_inline__))
 #else
-extern inline __attribute__((__always_inline__, __gnu_inline__))
+__always_inline
 #endif
 int b_growby(bstring *bstr, unsigned len)
 {
@@ -877,7 +886,7 @@ BSTR_PUBLIC int b_reada(bstring *bstr, bNread read_ptr, void *parm);
 #define b_iswriteprotected(BSTR_) \
         ((BSTR_) && (((BSTR_)->flags & BSTR_WRITE_ALLOWED) == 0))
 
-#define BSTR_NULL_INIT ((bstring[1]){{NULL, 0, 0, 0}})
+#define BSTR_NULL_INIT ((bstring[1]){{0, 0, NULL, 0}})
 
 /* 
  * Cleanup

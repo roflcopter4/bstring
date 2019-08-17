@@ -68,13 +68,26 @@
 #if (__GNUC__ >= 4)
 #  define BSTR_PUBLIC  __attribute__((__visibility__("default")))
 #  define BSTR_PRIVATE __attribute__((__visibility__("hidden")))
-#  define INLINE       __attribute__((__always_inline__)) static inline
-#  define PURE         __attribute__((__pure__))
+#  define INLINE       __attribute__((__always_inline__, __gnu_inline__)) extern inline
+#  ifndef _GNU_SOURCE
+#    define _GNU_SOURCE
+#  endif
 #else
 #  define BSTR_PUBLIC
 #  define BSTR_PRIVATE
 #  define INLINE static inline
-#  define PURE
+#endif
+
+#if (__GNUC__ > 2) || (__GNUC__ == 2 && __GNUC_MINOR__ > 4)
+#  ifdef __clang__
+#    define BSTR_PRINTF(format, argument) __attribute__((__format__(__printf__, format, argument)))
+#  else
+#    define BSTR_PRINTF(format, argument) __attribute__((__format__(__gnu_printf__, format, argument)))
+#  endif
+#  define BSTR_UNUSED __attribute__((__unused__))
+#else
+#  define BSTR_PRINTF(format, argument)
+#  define BSTR_UNUSED
 #endif
 
 #ifdef __cplusplus
@@ -93,50 +106,19 @@ typedef unsigned int uint;
 #ifdef HAVE_ERR
 #  include <err.h>
 #else
-    __attribute__((__format__(gnu_printf, 2, 3)))
-    static void _warn(bool print_err, const char *fmt, ...)
-    {
-            va_list ap;
-            va_start(ap, fmt);
-            char buf[8192];
-            snprintf(buf, 8192, "%s\n", fmt);
-            va_end(ap);
+    __attribute__((__format__(gnu_printf, 2, 3))) BSTR_PRIVATE
+    extern void BSTRING_warn_(bool print_err, const char *fmt, ...);
 
-            /* if (print_err)
-                    snprintf(buf, 8192, "%s: %s\n", fmt, strerror(errno));
-            else
-                    snprintf(buf, 8192, "%s\n", fmt); */
-            /* vfprintf(stderr, buf, ap); */
-            if (print_err)
-                    perror(buf);
-            else
-                    fputs(buf, stderr);
-#  ifdef _WIN32
-            fflush(stderr);
-#  endif
-    }
-#  define warn(...)       _warn(true, __VA_ARGS__)
-#  define warnx(...)      _warn(false, __VA_ARGS__)
-#  define err(EVAL, ...)  _warn(true, __VA_ARGS__), exit(EVAL)
-#  define errx(EVAL, ...) _warn(false, __VA_ARGS__), exit(EVAL)
+#  define warn(...)       BSTRING_warn_(true, __VA_ARGS__)
+#  define warnx(...)      BSTRING_warn_(false, __VA_ARGS__)
+#  define err(EVAL, ...)  (BSTRING_warn_(true, __VA_ARGS__), exit(EVAL))
+#  define errx(EVAL, ...) (BSTRING_warn_(false, __VA_ARGS__), exit(EVAL))
 #endif
 
 #ifdef _WIN32
-__attribute__((__format__(__gnu_printf__, 2, 3)))
-static inline int dprintf(int fd, char *fmt, ...)
-{
-	int fdx = _open_osfhandle(fd, 0);
-	register int ret;
-	FILE *fds;
-	va_list ap;
-	va_start(ap, fmt);
-	fdx = dup(fdx);
-	if((fds = fdopen(fdx, "w")) == NULL) return(-1);
-	ret = vfprintf(fds, fmt, ap);
-	fclose(fds);
-	va_end(ap);
-	return(ret);
-}
+   __attribute__((__format__(__gnu_printf__, 2, 3))) BSTR_PRIVATE
+   extern int BSTRING_dprintf(int fd, char *fmt, ...);
+#  define dprintf BSTRING_dprintf
 #endif /* _WIN32 */
 
 
@@ -166,7 +148,7 @@ static inline int dprintf(int fd, char *fmt, ...)
  * Debugging aids
  */
 #ifdef HAVE_EXECINFO_H
-#define FATAL_ERROR(...)                                                                   \
+#  define FATAL_ERROR(...)                                                                   \
         do {                                                                               \
                 void * arr[128];                                                           \
                 size_t num = backtrace(arr, 128);                                          \
@@ -180,7 +162,7 @@ static inline int dprintf(int fd, char *fmt, ...)
                 abort();                                                                   \
         } while (0)
 #else
-#define FATAL_ERROR(...) errx(1, __VA_ARGS__)
+#  define FATAL_ERROR(...) errx(1, __VA_ARGS__)
 #endif
 
 #define RUNTIME_ERROR() return BSTR_ERR
@@ -198,9 +180,9 @@ static inline int dprintf(int fd, char *fmt, ...)
  * memory is left on the system (a very rare occurance anyway).
  */
 #ifdef USE_XMALLOC
-__attribute__((__malloc__, __always_inline__))
-static inline void *
-xmalloc(const size_t size)
+__attribute__((__malloc__)) BSTR_PRIVATE
+INLINE void *
+BSTRING_xmalloc(const size_t size)
 {
         void *tmp = malloc(size);
         if (tmp == NULL)
@@ -208,23 +190,25 @@ xmalloc(const size_t size)
         return tmp;
 }
 
-__attribute__((__always_inline__))
-static inline void *
-xcalloc(const int num, const size_t size)
+BSTR_PRIVATE
+INLINE void *
+BSTRING_xcalloc(const int num, const size_t size)
 {
         void *tmp = calloc(num, size);
         if (tmp == NULL)
                 FATAL_ERROR("Calloc call failed - attempted %zu bytes", size);
         return tmp;
 }
+#define xmalloc BSTRING_xmalloc
+#define xcalloc BSTRING_xcalloc
 #else
 #  define xmalloc malloc
 #  define xcalloc calloc
 #endif
 
-__attribute__((__always_inline__))
-static inline void *
-xrealloc(void *ptr, size_t size)
+__attribute__((__always_inline__)) BSTR_PRIVATE
+INLINE void *
+BSTRING_xrealloc(void *ptr, size_t size)
 {
         void *tmp = realloc(ptr, size);
         if (!tmp)
@@ -232,11 +216,13 @@ xrealloc(void *ptr, size_t size)
         return tmp; 
 }
 
+#define xrealloc BSTRING_xrealloc
+
 #ifdef HAVE_VASPRINTF
 #  ifdef USE_XMALLOC
-__attribute__((__format__(__gnu_printf__, 2, 0), __always_inline__))
-static inline int
-xvasprintf(char **ptr, const char *const restrict fmt, va_list va)
+__attribute__((__format__(__gnu_printf__, 2, 0))) BSTR_PRIVATE
+INLINE int
+BSTRING_xvasprintf(char **ptr, const char *const restrict fmt, va_list va)
 {
         int ret = vasprintf(ptr, fmt, va);
         if (ret == (-1)) {
@@ -245,6 +231,7 @@ xvasprintf(char **ptr, const char *const restrict fmt, va_list va)
         }
         return ret;
 }
+#define xvasprintf BSTRING_xvasprintf
 #  else
 #    define xvasprintf vasprintf
 #  endif

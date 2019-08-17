@@ -6,6 +6,11 @@
 
 #include "bstring.h"
 #include "defines.h"
+
+#ifdef BSTRING_USE_P99
+#  include "p99/p99_id.h"
+#endif
+
 /*======================================================================================*/
 /* MY ADDITIONS */
 
@@ -47,9 +52,9 @@ extern "C" {
  */
 #define bt_init(CSTR)                             \
         {                                         \
+                .data  = (uchar *)("" CSTR ""),   \
                 .slen  = (sizeof(CSTR) - 1),      \
                 .mlen  = 0,                       \
-                .data  = (uchar *)("" CSTR ""),   \
                 .flags = 0x00U                    \
         }
 
@@ -62,8 +67,9 @@ extern "C" {
  * All bstring functions will refuse to modify the return from this macro,
  * including b_free(). The object must not otheriwise be free'd.
  */
-#define b_tmp(CSTR) ((bstring[]){bt_init(CSTR)}) 
-#define B(CSTR)     ((bstring[]){bt_init(CSTR)}) 
+#define BT          bt_init
+#define b_tmp(CSTR) ((bstring[]){bt_init(CSTR)})
+#define B(CSTR)     ((bstring[]){bt_init(CSTR)})
 
 /**
  * Creates a static bstring reference to existing memory without copying it.
@@ -78,23 +84,23 @@ extern "C" {
  */
 
 #define bt_fromblk(BLK, LEN) \
-        ((bstring){ .slen = (LEN), .mlen = 0, .data = ((uchar *)(BLK)), .flags = 0x00u })
+        ((bstring){ .data = ((uchar *)(BLK)), .slen = (LEN), .mlen = 0, .flags = 0x00U })
 
 #define bt_fromcstr(CSTR) \
-        ((bstring){ .slen = strlen(CSTR), .mlen = 0, .data = ((uchar *)(CSTR)), .flags = 0x00u })
+        ((bstring){ .data = ((uchar *)(CSTR)), .slen = strlen(CSTR), .mlen = 0, .flags = 0x00U })
 
 #define bt_fromarray(CSTR) \
-        ((bstring){ .slen = (sizeof(CSTR) - 1), .mlen = 0, .data = (uchar *)(CSTR), .flags = 0x00u })
+        ((bstring){ .data = (uchar *)(CSTR), .slen = (sizeof(CSTR) - 1), .mlen = 0, .flags = 0x00U })
 
 
 #define btp_fromblk(BLK, LEN) \
-        (&(bstring){.slen = (LEN), .mlen = 0, .data = ((uchar *)(BLK)), .flags = 0x00u}) 
+        ((bstring[]){{ .data = ((uchar *)(BLK)), .slen = (LEN), .mlen = 0, .flags = 0x00U}})
 
 #define btp_fromcstr(STR_) \
-        (&(bstring){.slen = strlen(STR_), .mlen = 0, .data = ((uchar *)(STR_)), .flags = 0x00u}) 
+        ((bstring[]){{ .data = ((uchar *)(STR_)), .slen = strlen(STR_), .mlen = 0, .flags = 0x00U}})
 
 #define btp_fromarray(CARRAY_) \
-        (&(bstring){.slen  = (sizeof(CARRAY_) - 1), .mlen  = 0, .data  = ((unsigned char *)(CARRAY_)), .flags = 0}) 
+        ((bstring[]){{ .data  = ((uchar *)(CARRAY_)), .slen  = (sizeof(CARRAY_) - 1), .mlen  = 0, .flags = 0}})
 
 
 #define b_litsiz                   b_staticBlkParms
@@ -104,14 +110,15 @@ extern "C" {
 #define b_fromlit(LIT_STR)         b_lit2bstr(LIT_STR)
 #define b_iseq_lit(BSTR, LIT_STR)  b_iseq((BSTR), B(LIT_STR))
 
-#define B_ISEQ(a, b) _Generic(b,                                                 \
+#if __STDC_VERSION__ >= 201112LL
+#  define B_ISEQ(a, b) _Generic(b,                                               \
                 bstring *          : b_iseq     (((void *)(a)), ((void *) (b))), \
                 const bstring *    : b_iseq     (((void *)(a)), ((void *) (b))), \
                 volatile bstring * : b_iseq     (((void *)(a)), ((void *) (b))), \
                 char *             : b_iseq_cstr(((void *)(a)), ((void *) (b))), \
                 const char *       : b_iseq     (((void *)(a)), ((void *)B(b))), \
                 volatile char *    : b_iseq_cstr(((void *)(a)), ((void *) (b))))
-
+#endif
 
 /**
  * Allocates a reference to the data of an existing bstring without copying the
@@ -130,6 +137,7 @@ BSTR_PUBLIC bstring *b_clone(const bstring *src);
  */
 BSTR_PUBLIC bstring *b_clone_swap(bstring *src);
 BSTR_PUBLIC bstring *b_ll2str(const long long value);
+BSTR_PUBLIC int      b_strcmp_fast(const bstring *a, const bstring *b);
 BSTR_PUBLIC int      b_strcmp_fast_wrap(const void *vA, const void *vB);
 BSTR_PUBLIC int      b_strcmp_wrap(const void *vA, const void *vB);
 
@@ -184,7 +192,7 @@ b_fread(void *buf, const size_t size, const size_t nelem, void *param)
 __attribute__((__format__(__printf__, 1, 2)))
 BSTR_PUBLIC bstring *b_quickread(const char *__restrict fmt, ...);
 BSTR_PUBLIC bstring *b_read_fd(const int fd);
-
+BSTR_PUBLIC bstring *b_read_stdin(void);
 
 /*--------------------------------------------------------------------------------------*/
 /* Some additional list operations. */
@@ -192,7 +200,7 @@ BSTR_PUBLIC bstring *b_read_fd(const int fd);
 /**
  * Signifies the end of a list of bstring varargs.
  */
-#define B_LIST_END_MARK ((bstring[]){{0, 0, NULL, BSTR_LIST_END}})
+#define B_LIST_END_MARK ((bstring[]){NULL, 0, 0, BSTR_LIST_END})
 
 
 /**
@@ -239,17 +247,27 @@ BSTR_PUBLIC void _b_list_dump_fd(int fd, const b_list *list, const char *listnam
 #define b_list_dump(FP, LST)    _b_list_dump((FP), (LST), #LST)
 #define b_list_dump_fd(FD, LST) _b_list_dump_fd((FD), (LST), #LST)
 
-#define B_LIST_FOREACH(BLIST, VAR, CTR)                                    \
-        for (bstring *VAR = ((BLIST)->lst[((CTR) = 0)]);                   \
-             (CTR) < (BLIST)->qty && (((VAR) = (BLIST)->lst[(CTR)]) || 1); \
-             ++(CTR))
-#define B_LIST_FOREACH_2(BLIST, VAR, CTR)                                          \
-        for (unsigned CTR, BLIST##_##VAR##_##CTR##_b = true;                       \
-             BLIST##_##VAR##_##CTR##_b;                                            \
-             BLIST##_##VAR##_##CTR##_b = false)                                    \
+#ifdef BSTRING_USE_P99
+#define B_LIST_FOREACH(LIST, VAR, ...)                                                   \
+        B_LIST_FOREACH_EXPLICIT_(LIST, VAR,                                              \
+                                  P99_IF_EMPTY(__VA_ARGS__)(P99_UNIQ(cnt))(__VA_ARGS__), \
+                                  P99_UNIQ(blist_b))
+#  define B_LIST_FOREACH_EXPLICIT_(BLIST, VAR, CTR, BL)         \
+        for (unsigned CTR, (BL) = true;                         \
+             (BLIST) != NULL && (BL);                           \
+             (BL) = false)                                      \
                 for (bstring *VAR = ((BLIST)->lst[((CTR) = 0)]);                   \
                      (CTR) < (BLIST)->qty && (((VAR) = (BLIST)->lst[(CTR)]) || 1); \
                      ++(CTR))
+#else
+#  define B_LIST_FOREACH(BLIST, VAR, CTR)                                          \
+        for (unsigned CTR, blist_##VAR##_##CTR##_b = true;                         \
+             (BLIST) != NULL && blist_##VAR##_##CTR##_b;                           \
+             blist_##VAR##_##CTR##_b = false)                                      \
+                for (bstring *VAR = ((BLIST)->lst[((CTR) = 0)]);                   \
+                     (CTR) < (BLIST)->qty && (((VAR) = (BLIST)->lst[(CTR)]) || 1); \
+                     ++(CTR))
+#endif
 
 #define B_LIST_SORT(BLIST) \
         qsort((BLIST)->lst, (BLIST)->qty, sizeof(*((BLIST)->lst)), &b_strcmp_wrap)
@@ -258,9 +276,12 @@ BSTR_PUBLIC void _b_list_dump_fd(int fd, const b_list *list, const char *listnam
 
 #define B_LIST_BSEARCH(BLIST, ITEM_) \
         bsearch(&(ITEM_), (BLIST)->lst, (BLIST)->qty, sizeof(bstring *), &b_strcmp_wrap)
-#define B_LIST_BSEARCH_FAST(BLIST, ITEM_) \
+
+#if __STDC_VERSION__ >= 201112LL
+#  define B_LIST_BSEARCH_FAST(BLIST, ITEM_)                           \
         _Generic(ITEM_, bstring *: bsearch, const bstring *: bsearch) \
         (&(ITEM_), (BLIST)->lst, (BLIST)->qty, sizeof(bstring *), &b_strcmp_fast_wrap)
+#endif
 
 /*--------------------------------------------------------------------------------------*/
 
@@ -269,13 +290,16 @@ BSTR_PUBLIC void _b_list_dump_fd(int fd, const b_list *list, const char *listnam
 #define BSTR_M_SORT_FAST 0x04
 #define BSTR_M_DEL_DUPS  0x08
 
-BSTR_PUBLIC int       b_list_append(b_list **list, bstring *bstr);
+BSTR_PUBLIC int       b_list_append(b_list *list, bstring *bstr);
+BSTR_PUBLIC int       b_list_remove(b_list *list, unsigned index);
 BSTR_PUBLIC int       b_list_merge(b_list **dest, b_list *src, int flags);
 BSTR_PUBLIC int       b_list_remove_dups(b_list **listp);
 BSTR_PUBLIC b_list   *b_list_copy(const b_list *list);
 BSTR_PUBLIC b_list   *b_list_clone(const b_list *list);
 BSTR_PUBLIC b_list   *b_list_clone_swap(b_list *list);
 BSTR_PUBLIC bstring  *b_list_join(const b_list *list, const bstring *sep);
+
+#define b_list_pop(lst) ((lst) ? b_list_remove((lst), (lst)->qty) : (int)0)
 
 BSTR_PUBLIC int b_list_writeprotect(b_list *list);
 BSTR_PUBLIC int b_list_writeallow(b_list *list);
@@ -299,9 +323,12 @@ BSTR_PUBLIC bstring   *b_basename(const bstring *path);
 BSTR_PUBLIC bstring   *b_regularize_path(bstring *path);
 
 BSTR_PUBLIC int        b_chomp(bstring *bstr);
+BSTR_PUBLIC int        b_strip_leading_ws(bstring *bstr);
+BSTR_PUBLIC int        b_strip_trailing_ws(bstring *bstr);
 BSTR_PUBLIC int        b_replace_ch(bstring *bstr, int find, int replacement);
 BSTR_PUBLIC int        b_catblk_nonul(bstring *bstr, void *blk, unsigned len);
-BSTR_PUBLIC _Bool      b_starts_with(const bstring *b0, const bstring *b1);
+BSTR_PUBLIC bool       b_starts_with(const bstring *b0, const bstring *b1);
+BSTR_PUBLIC int        b_insert_char(bstring *str, unsigned location, int ch);
 
 BSTR_PUBLIC bstring   *_b_sprintf  (const bstring *fmt, ...);
 BSTR_PUBLIC bstring   *_b_vsprintf (const bstring *fmt, va_list args);

@@ -60,14 +60,16 @@ typedef unsigned char uchar;
 #define BSTR_OK (0)
 #define BSTR_BS_BUFF_LENGTH_GET (0)
 
-#define BSTR_WRITE_ALLOWED 0x01U
-#define BSTR_FREEABLE      0x02U
-#define BSTR_DATA_FREEABLE 0x04U
-#define BSTR_LIST_END      0x08U
-#define BSTR_CLONE         0x10U
-#define BSTR_MASK_USR3     0x20U
-#define BSTR_MASK_USR2     0x40U
-#define BSTR_MASK_USR1     0x80U
+enum BSTR_flags {
+        BSTR_WRITE_ALLOWED = 0x01U,
+        BSTR_FREEABLE      = 0x02U,
+        BSTR_DATA_FREEABLE = 0x04U,
+        BSTR_LIST_END      = 0x08U,
+        BSTR_CLONE         = 0x10U,
+        BSTR_MASK_USR3     = 0x20U,
+        BSTR_MASK_USR2     = 0x40U,
+        BSTR_MASK_USR1     = 0x80U,
+};
 
 #define BSTR_STANDARD (BSTR_WRITE_ALLOWED | BSTR_FREEABLE | BSTR_DATA_FREEABLE)
 
@@ -76,18 +78,17 @@ typedef struct bstring_s    bstring;
 typedef struct bstring_list b_list;
 
 struct bstring_s {
+        unsigned char *data;
         unsigned int   slen;
         unsigned int   mlen;
-        unsigned char *data;
         unsigned char  flags;
 };
 #pragma pack(pop)
 
 struct bstring_list {
+        bstring **lst;
         unsigned  qty;
         unsigned  mlen;
-        bstring **lst;
-        pthread_rwlock_t lock;
 };
 
 #ifdef __cplusplus

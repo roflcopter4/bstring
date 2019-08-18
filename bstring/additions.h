@@ -200,7 +200,7 @@ BSTR_PUBLIC bstring *b_read_stdin(void);
 /**
  * Signifies the end of a list of bstring varargs.
  */
-#define B_LIST_END_MARK ((bstring[]){NULL, 0, 0, BSTR_LIST_END})
+#define B_LIST_END_MARK ((bstring[]){{NULL, 0, 0, BSTR_LIST_END}})
 
 
 /**

@@ -102,6 +102,8 @@ BSTR_PUBLIC bstring *b_create(unsigned len);
 /* Backwards compatibility */
 #define b_alloc_null b_create
 
+#define b_empty_string() b_alloc_null(0)
+
 /**
  * Create a bstring whose contents are described by the contiguous buffer
  * pointing to by blk with a length of len bytes.
@@ -189,6 +191,18 @@ BSTR_PUBLIC int b_assign_blk(bstring *a, const void *buf, unsigned len);
  */
 BSTR_PUBLIC int b_free(bstring *bstr);
 
+#if 0
+INLINE int
+__b_destroy(bstring **bstr)
+{
+        const int ret = b_free(*bstr);
+        if (ret == BSTR_OK)
+                *bstr = NULL;
+        return ret;
+}
+#define b_destroy(BSTR) (__b_destroy(&(BSTR)))
+#endif
+
 #define b_destroy(BSTR) ((b_free(BSTR) == BSTR_OK) ? ((BSTR) = NULL) : (NULL))
 
 
@@ -252,10 +266,10 @@ BSTR_PUBLIC int b_alloc(bstring *bstr, unsigned olen);
  */
 BSTR_PUBLIC int b_allocmin(bstring *bstr, unsigned len);
 
-#ifndef __GNUC__
-static inline
+#ifndef __always_inline
+extern __inline__ __attribute__((__always_inline__))
 #else
-extern inline __attribute__((__always_inline__, __gnu_inline__))
+__always_inline
 #endif
 int b_growby(bstring *bstr, unsigned len)
 {
@@ -332,6 +346,7 @@ BSTR_PUBLIC int b_trunc(bstring *bstr, unsigned n);
  * is given, but if the first extra character is '\0', then it is taken to be
  * the value UCHAR_MAX + 1.
  */
+__attribute__((pure))
 BSTR_PUBLIC int b_stricmp(const bstring *b0, const bstring *b1);
 
 /**
@@ -344,6 +359,7 @@ BSTR_PUBLIC int b_stricmp(const bstring *b0, const bstring *b1);
  * than n characters, then a difference from 0 is given, but if the first extra
  * character is '\0', then it is taken to be the value UCHAR_MAX + 1.
  */
+__attribute__((pure))
 BSTR_PUBLIC int b_strnicmp(const bstring *b0, const bstring *b1, unsigned n);
 
 /**
@@ -354,6 +370,7 @@ BSTR_PUBLIC int b_strnicmp(const bstring *b0, const bstring *b1, unsigned n);
  * the length of the bstrings are different, this function is O(1). '\0'
  * termination characters are not treated in any special way.
  */
+__attribute__((pure))
 BSTR_PUBLIC int b_iseq_caseless(const bstring *b0, const bstring *b1);
 
 /**
@@ -367,6 +384,7 @@ BSTR_PUBLIC int b_iseq_caseless(const bstring *b0, const bstring *b1);
  * Note that the semantics of biseq are not completely compatible with bstrcmp
  * because of its different treatment of the '\0' character.
  */
+__attribute__((pure))
 BSTR_PUBLIC int b_iseq(const bstring *b0, const bstring *b1);
 
 /**
@@ -380,6 +398,7 @@ BSTR_PUBLIC int b_iseq(const bstring *b0, const bstring *b1);
  * other. If they are equal 1 is returned, if they are unequal 0 is returned and
  * if there is a detectable error BSTR_ERR is returned.
  */
+__attribute__((pure))
 BSTR_PUBLIC int b_iseq_cstr(const bstring *bstr, const char *buf);
 
 /**
@@ -394,6 +413,7 @@ BSTR_PUBLIC int b_iseq_cstr(const bstring *bstr, const char *buf);
  * returned, if they are unequal regardless of case 0 is returned and if there
  * is a detectable error BSTR_ERR is returned.
  */
+__attribute__((pure))
 BSTR_PUBLIC int b_iseq_cstr_caseless(const bstring *bstr, const char *buf);
 
 /**
@@ -417,6 +437,7 @@ BSTR_PUBLIC int b_iseq_cstr_caseless(const bstring *bstr, const char *buf);
  * Note that the semantics of bstrcmp are not completely compatible with biseq
  * because of its different treatment of the '\0' termination character.
  */
+__attribute__((pure))
 BSTR_PUBLIC int b_strcmp(const bstring *b0, const bstring *b1);
 
 /**
@@ -433,6 +454,7 @@ BSTR_PUBLIC int b_strcmp(const bstring *b0, const bstring *b1);
  * granularity than the undefined situation given in the C library function
  * strncmp. The function otherwise behaves very much like strncmp().
  */
+__attribute__((pure))
 BSTR_PUBLIC int b_strncmp(const bstring *b0, const bstring *b1, unsigned n);
 
 /**
@@ -441,6 +463,7 @@ BSTR_PUBLIC int b_strncmp(const bstring *b0, const bstring *b1, unsigned n);
  *
  * Returns the position of the found character or BSTR_ERR if it is not found.
  */
+__attribute__((pure))
 BSTR_PUBLIC int64_t b_strchrp(const bstring *bstr, int ch, unsigned pos);
 
 /**
@@ -449,6 +472,7 @@ BSTR_PUBLIC int64_t b_strchrp(const bstring *bstr, int ch, unsigned pos);
  *
  * Returns the position of the found character or BSTR_ERR if it is not found.
  */
+__attribute__((pure))
 BSTR_PUBLIC int64_t b_strrchrp(const bstring *bstr, int ch, unsigned pos);
 
 /**
@@ -877,7 +901,9 @@ BSTR_PUBLIC int b_reada(bstring *bstr, bNread read_ptr, void *parm);
 #define b_iswriteprotected(BSTR_) \
         ((BSTR_) && (((BSTR_)->flags & BSTR_WRITE_ALLOWED) == 0))
 
-#define BSTR_NULL_INIT ((bstring[1]){{NULL, 0, 0, 0}})
+#define BSTR_STATIC_INIT           {.data = NULL, .slen = 0, .mlen = 0, .flags = 0}
+#define BSTR_WRITEABLE_STATIC_INIT {.data = NULL, .slen = 0, .mlen = 0, .flags = BSTR_WRITE_ALLOWED}
+#define BSTR_NULL_INIT             ((bstring[1]){BSTR_STATIC_INIT})
 
 /* 
  * Cleanup

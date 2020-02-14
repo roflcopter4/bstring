@@ -40,15 +40,16 @@
 
 #include "bstring.h"
 
-#include <talloc.h>
-
+#ifdef BSTR_USE_TALLOC
+#  include <talloc.h>
+#  define free talloc_free
+#endif
 
 /**
  * Compute the snapped size for a given requested size.
  * By snapping to powers of 2 like this, repeated reallocations are avoided.
  */
-/*PRIVATE*/ unsigned
-snapUpSize(unsigned i)
+/*PRIVATE*/ unsigned snapUpSize(unsigned i)
 {
         if (i < 8) {
                 i = 8;
@@ -74,7 +75,6 @@ snapUpSize(unsigned i)
 }
 
 
-#if 0
 int
 b_alloc(bstring *bstr, const unsigned olen)
 {
@@ -91,79 +91,25 @@ b_alloc(bstring *bstr, const unsigned olen)
                 if (len <= bstr->mlen)
                         return BSTR_OK;
 
+#ifdef BSTR_USE_TALLOC
+                tmp = talloc_realloc_size(bstr, bstr->data, len);
+#else
                 /* Assume probability of a non-moving realloc is 0.125 */
                 if (7 * bstr->mlen < 8 * bstr->slen) {
                         /* If slen is close to mlen in size then use realloc
                          * to reduce the memory defragmentation */
-                retry:
                         tmp = realloc(bstr->data, len);
-                        if (!tmp) {
-                                /* Since we failed, try mallocating the tighest
-                                 * possible allocation */
-                                len = olen;
-                                tmp = realloc(bstr->data, len);
-                                if (!tmp)
-                                        ALLOCATION_ERROR(BSTR_ERR);
-                        }
                 } else {
                         /* If slen is not close to mlen then avoid the penalty
                          * of copying the extra bytes that are allocated, but
                          * not considered part of the string */
                         tmp = malloc(len);
-                        /* Perhaps there is no available memory for the two
-                         * allocations to be in memory at once */
-                        if (!tmp)
-                                goto retry;
-
                         if (bstr->slen)
                                 memcpy(tmp, bstr->data, bstr->slen);
-                        xfree(bstr->data);
-                }
-
-                bstr->data             = tmp;
-                bstr->mlen             = len;
-                bstr->data[bstr->slen] = (uchar)'\0';
-                bstr->flags            = BSTR_STANDARD;
-        }
-        return BSTR_OK;
-}
-#endif
-
-
-int
-b_alloc(bstring *bstr, const unsigned olen)
-{
-        if (INVALID(bstr) || olen == 0)
-                RUNTIME_ERROR();
-        if (NO_ALLOC(bstr))
-                FATAL_ERROR("Error, attempt to reallocate a static bstring.\n");
-        if (NO_WRITE(bstr))
-                RUNTIME_ERROR();
-
-        if (olen >= bstr->mlen) {
-                uchar *tmp;
-                unsigned len = snapUpSize(olen);
-                if (len <= bstr->mlen)
-                        return BSTR_OK;
-
-#if 0
-                /* Assume probability of a non-moving realloc is 0.125 */
-                if (7 * bstr->mlen < 8 * bstr->slen) {
-                        /* If slen is close to mlen in size then use realloc
-                         * to reduce the memory defragmentation */
-                        tmp = talloc_realloc_size(bstr, bstr->data, len);
-                } else {
-                        /* If slen is not close to mlen then avoid the penalty
-                         * of copying the extra bytes that are allocated, but
-                         * not considered part of the string */
-                        tmp = talloc_size(bstr, len);
-                        if (bstr->slen)
-                                memcpy(tmp, bstr->data, bstr->slen);
-                        talloc_free(bstr->data);
+                        free(bstr->data);
                 }
 #endif
 
-                tmp = talloc_realloc_size(bstr, bstr->data, len);
                 bstr->data             = tmp;
                 bstr->mlen             = len;
                 bstr->data[bstr->slen] = (uchar)'\0';
@@ -187,7 +133,11 @@ b_allocmin(bstring *bstr, unsigned len)
                 len = bstr->slen + 1;
 
         if (len != bstr->mlen) {
-                uchar *buf      = talloc_realloc_size(NULL, bstr->data, (size_t)len);
+#ifdef BSTR_USE_TALLOC
+                uchar *buf = talloc_realloc_size(NULL, bstr->data, (size_t)len);
+#else
+                uchar *buf = realloc(bstr->data, (size_t)len);
+#endif
                 buf[bstr->slen] = (uchar)'\0';
                 bstr->data      = buf;
                 bstr->mlen      = len;
@@ -202,23 +152,25 @@ int
 b_free(bstring *bstr)
 {
         if (!bstr)
-                return BSTR_ERR;
-                /* RUNTIME_ERROR(); */
-        if (!(bstr->flags & BSTR_WRITE_ALLOWED) && !IS_CLONE(bstr))
-                return BSTR_ERR;
-                /* RUNTIME_ERROR(); */
+                RUNTIME_ERROR();
+                /* FATAL_ERROR("bstring runtime error: Attempt to free NULL bstring"); */
+
+        if ((!(bstr->flags & BSTR_WRITE_ALLOWED) ||
+              (bstr->flags & BSTR_BASE_MOVED)) && !IS_CLONE(bstr))
+                RUNTIME_ERROR();
+                /* FATAL_ERROR("bstring runtime error: Attempt to free non-writable which is not a clone"); */
 
         if (bstr->data && (bstr->flags & BSTR_DATA_FREEABLE))
-                talloc_free(bstr->data);
+                free(bstr->data);
 
         bstr->data = NULL;
         bstr->slen = bstr->mlen = (-1);
 
         if (!(bstr->flags & BSTR_FREEABLE))
-                return BSTR_ERR;
-                /* RUNTIME_ERROR(); */
+                RUNTIME_ERROR();
+                /* FATAL_ERROR("bstring runtime error: Attempt to free non-freeable bstring"); */
 
-        talloc_free(bstr);
+        free(bstr);
         return BSTR_OK;
 }
 
@@ -235,14 +187,19 @@ b_fromcstr(const char *const str)
         if (max <= size)
                 RETURN_NULL();
 
+#ifdef BSTR_USE_TALLOC
         bstring *bstr = talloc(NULL, bstring);
+        bstr->data    = talloc_size(bstr, max);
+        talloc_set_destructor(bstr, b_free);
+#else
+        bstring *bstr = malloc(sizeof *bstr);
+        bstr->data    = malloc(max);
+#endif
         bstr->slen    = size;
         bstr->mlen    = max;
-        bstr->data    = talloc_size(bstr, bstr->mlen);
         bstr->flags   = BSTR_STANDARD;
 
         memcpy(bstr->data, str, size + 1);
-        talloc_set_destructor(bstr, b_free);
         return bstr;
 }
 
@@ -258,14 +215,19 @@ b_fromcstr_alloc(const unsigned mlen, const char *const str)
 
         if (max <= size)
                 RETURN_NULL();
-
-        bstring *bstr = talloc(NULL, bstring);
-        bstr->slen    = size;
         if (max < mlen)
                 max = mlen;
 
+#ifdef BSTR_USE_TALLOC
+        bstring *bstr = talloc(NULL, bstring);
+        bstr->data    = talloc_size(bstr, max);
+        talloc_set_destructor(bstr, b_free);
+#else
+        bstring *bstr = malloc(sizeof *bstr);
+        bstr->data    = malloc(max);
+#endif
+        bstr->slen  = size;
         bstr->mlen  = max;
-        bstr->data  = talloc_size(bstr, bstr->mlen);
         bstr->flags = BSTR_STANDARD;
 
         memcpy(bstr->data, str, size + 1);
@@ -279,16 +241,23 @@ b_fromblk(const void *blk, const unsigned len)
         if (!blk)
                 RETURN_NULL();
 
+        unsigned const max = snapUpSize(len + (2 - (len != 0)));
+
+#ifdef BSTR_USE_TALLOC
         bstring *bstr = talloc(NULL, bstring);
-        bstr->slen    = len;
-        bstr->mlen    = snapUpSize(len + (2 - (len != 0)));;
-        bstr->data    = talloc_size(bstr, bstr->mlen);
-        bstr->flags   = BSTR_STANDARD;
+        bstr->data    = talloc_size(bstr, max);
+        talloc_set_destructor(bstr, b_free);
+#else
+        bstring *bstr = malloc(sizeof *bstr);
+        bstr->data    = malloc(max);
+#endif
+        bstr->slen  = len;
+        bstr->mlen  = max;
+        bstr->flags = BSTR_STANDARD;
 
         if (len > 0)
                 memcpy(bstr->data, blk, len);
         bstr->data[len] = (uchar)'\0';
-        talloc_set_destructor(bstr, b_free);
 
         return bstr;
 }
@@ -297,14 +266,18 @@ b_fromblk(const void *blk, const unsigned len)
 bstring *
 b_create(const unsigned len)
 {
-        int safelen   = len + 1;
+#ifdef BSTR_USE_TALLOC
         bstring *bstr = talloc(NULL, bstring);
-        bstr->slen    = 0;
-        bstr->mlen    = safelen;
-        bstr->flags   = BSTR_STANDARD;
-        bstr->data    = talloc_size(bstr, safelen);
-        bstr->data[0] = (uchar)'\0';
+        bstr->data    = talloc_size(bstr, len + 1);
         talloc_set_destructor(bstr, b_free);
+#else
+        bstring *bstr = malloc(sizeof *bstr);
+        bstr->data    = malloc(len + 1);
+#endif
+        bstr->slen    = 0;
+        bstr->mlen    = len + 1;
+        bstr->flags   = BSTR_STANDARD;
+        bstr->data[0] = (uchar)'\0';
 
         return bstr;
 }
@@ -315,7 +288,11 @@ b_bstr2cstr(const bstring *bstr, const char nul)
 {
         if (INVALID(bstr))
                 RETURN_NULL();
+#ifdef BSTR_USE_TALLOC
         char *buf = talloc_size(NULL, bstr->slen + 1);
+#else
+        char *buf = malloc(bstr->slen + 1);
+#endif
 
         if (nul == 0) {
                 /* Don't bother trying to replace nul characters with anything,
@@ -335,7 +312,7 @@ b_bstr2cstr(const bstring *bstr, const char nul)
 int
 b_cstrfree(char *buf)
 {
-        talloc_free(buf);
+        free(buf);
         return BSTR_OK;
 }
 
@@ -372,25 +349,6 @@ b_concat(bstring *b0, const bstring *b1)
 
         return BSTR_OK;
 }
-
-
-#if 0
-int
-b_conchar(bstring *bstr, const char ch)
-{
-        if (INVALID(bstr) || NO_WRITE(bstr))
-                RUNTIME_ERROR();
-
-        if (bstr->mlen < (bstr->slen + 2))
-                if (b_alloc(bstr, bstr->slen + 2) != BSTR_OK)
-                        RUNTIME_ERROR();
-
-        bstr->data[bstr->slen++] = (uchar)ch;
-        bstr->data[bstr->slen]   = (uchar)'\0';
-
-        return BSTR_OK;
-}
-#endif
 
 
 int
@@ -443,15 +401,16 @@ b_strcpy(const bstring *bstr)
 {
         if (INVALID(bstr))
                 RETURN_NULL();
+        unsigned size = snapUpSize(bstr->slen + 1);
 
-        bstring  *b0   = talloc(NULL, bstring);
-        unsigned  size = snapUpSize(bstr->slen + 1);
-        b0->data       = talloc_size(b0, size);
-
-        if (!b0->data) {
-                size     = bstr->slen + 1;
-                b0->data = talloc_size(b0, size);
-        }
+#ifdef BSTR_USE_TALLOC
+        bstring  *b0 = talloc(NULL, bstring);
+        b0->data     = talloc_size(b0, size);
+        talloc_set_destructor(b0, b_free);
+#else
+        bstring  *b0 = malloc(sizeof(bstring));
+        b0->data     = malloc(size);
+#endif
         b0->mlen  = size;
         b0->slen  = bstr->slen;
         b0->flags = BSTR_STANDARD;
@@ -460,7 +419,6 @@ b_strcpy(const bstring *bstr)
                 memcpy(b0->data, bstr->data, bstr->slen);
         b0->data[b0->slen] = (uchar)'\0';
 
-        talloc_set_destructor(b0, b_free);
         return b0;
 }
 
@@ -503,7 +461,7 @@ b_assign_cstr(bstring *a, const char *str)
         const size_t len = strlen(str + i);
         if (len > INT_MAX || i + len + 1 > INT_MAX || 0 > b_alloc(a, (i + len + 1)))
                 RUNTIME_ERROR();
-        memmove(a->data + i, str + i, (size_t)len + 1);
+        memmove(a->data + i, str + i, len + UINTMAX_C(1));
         a->slen += len;
         a->flags = BSTR_STANDARD;
 
@@ -573,15 +531,18 @@ b_tolower(bstring *bstr)
 int
 b_strcmp(const bstring *b0, const bstring *b1)
 {
-        /* if (INVALID(b0)) */
-                /* errx(1, "ERROR: string b0 is invalid -> %p, %u, %u, 0x%02X %s", */
-                     /* (void *)b0, b0->slen, b0->mlen, b0->flags, BS(b0)); */
-        /* if (INVALID(b1)) */
-                /* errx(1, "ERROR: string b1 is invalid -> %p, %u, %u, 0x%02X %s", */
-                     /* (void *)b1, b1->slen, b1->mlen, b1->flags, BS(b1)); */
+#if 0
+        if (INVALID(b0))
+                errx(1, "ERROR: string b0 is invalid -> %p, %u, %u, 0x%02X %s",
+                     (void *)b0, b0->slen, b0->mlen, b0->flags, BS(b0));
+        if (INVALID(b1))
+                errx(1, "ERROR: string b1 is invalid -> %p, %u, %u, 0x%02X %s",
+                     (void *)b1, b1->slen, b1->mlen, b1->flags, BS(b1));
+        if (INVALID(b0) || INVALID(b1))
+                return SHRT_MIN;
+#endif
         if (INVALID(b0) || INVALID(b1))
                 abort();
-                /* return SHRT_MIN; */
 
         /* Return zero if two strings are both empty or point to the same data. */
         if (b0->slen == b1->slen && (b0->data == b1->data || b0->slen == 0))
@@ -616,27 +577,7 @@ b_strncmp(const bstring *b0, const bstring *b1, const unsigned n)
 {
         if (INVALID(b0) || INVALID(b1))
                 return SHRT_MIN;
-
         const unsigned m = MIN(n, MIN(b0->slen, b1->slen));
-
-#if 0
-        if (b0->data != b1->data) {
-                for (unsigned i = 0; i < m; ++i) {
-                        int v = ((char)b0->data[i]) - ((char)b1->data[i]);
-                        if (v != 0)
-                                return v;
-                        if (b0->data[i] == (uchar)'\0')
-                                return 0;
-                }
-        }
-
-        if (n == m || b0->slen == b1->slen)
-                return 0;
-        if (b0->slen > m)
-                return 1;
-#endif
-
-        /* RUNTIME_ERROR(); */
         return memcmp(b0->data, b1->data, m);
 }
 
@@ -644,12 +585,8 @@ b_strncmp(const bstring *b0, const bstring *b1, const unsigned n)
 int
 b_stricmp(const bstring *b0, const bstring *b1)
 {
-
-        unsigned n;
         if (INVALID(b0) || INVALID(b1))
                 return SHRT_MIN;
-        if ((n = b0->slen) > b1->slen)
-                n = b1->slen;
         else if (b0->slen == b1->slen && b0->data == b1->data)
                 return BSTR_OK;
 
@@ -658,6 +595,9 @@ b_stricmp(const bstring *b0, const bstring *b1)
 #elif defined(HAVE_STRICMP)
         return stricmp(BS(b0), BS(b1));
 #else
+        unsigned n;
+        if ((n = b0->slen) > b1->slen)
+                n = b1->slen;
         for (unsigned i = 0; i < n; ++i) {
                 const int v = (char)downcase(b0->data[i]) - (char)downcase(b1->data[i]);
                 if (v != 0)
@@ -723,12 +663,14 @@ b_iseq(const bstring *b0, const bstring *b1)
 {
         if (INVALID(b0) || INVALID(b1))
                 RUNTIME_ERROR();
-        /* if (INVALID(b0)) */
-                /* errx(1, "ERROR: string b0 is invalid -> %p, %u, %u, 0x%02X %s", */
-                     /* (void *)b0, b0->slen, b0->mlen, b0->flags, BS(b0)); */
-        /* if (INVALID(b1)) */
-                /* errx(1, "ERROR: string b1 is invalid -> %p, %u, %u, 0x%02X %s", */
-                     /* (void *)b1, b1->slen, b1->mlen, b1->flags, BS(b1)); */
+#if 0
+        if (INVALID(b0))
+                errx(1, "ERROR: string b0 is invalid -> %p, %u, %u, 0x%02X %s",
+                     (void *)b0, b0->slen, b0->mlen, b0->flags, BS(b0));
+        if (INVALID(b1))
+                errx(1, "ERROR: string b1 is invalid -> %p, %u, %u, 0x%02X %s",
+                     (void *)b1, b1->slen, b1->mlen, b1->flags, BS(b1));
+#endif
 
         if (b0->slen != b1->slen)
                 return 0;
@@ -766,15 +708,7 @@ b_iseq_cstr(const bstring *bstr, const char *buf)
 {
         if (!buf || INVALID(bstr))
                 RUNTIME_ERROR();
-#if 0
-        unsigned i;
 
-        for (i = 0; i < bstr->slen; ++i)
-                if (buf[i] == '\0' || bstr->data[i] != (uchar)buf[i])
-                        return 0;
-
-        return buf[i] == '\0';
-#endif
         const size_t len = strlen(buf);
 
         if (bstr->slen != len)
@@ -1006,12 +940,23 @@ b_vformat(const char *const fmt, va_list arglist)
         bstring *buff;
 
 #ifdef HAVE_VASPRINTF
+#  ifdef BSTR_USE_TALLOC
         buff        = talloc(NULL, bstring);
         buff->data  = (uchar *)talloc_vasprintf(buff, fmt, arglist);
         buff->slen  = strlen((char *)buff->data);
+        talloc_set_destructor(buff, b_free);
+#  else
+        unsigned total;
+        char *tmp   = NULL;
+        total       = vasprintf(&tmp, fmt, arglist);
+        buff        = malloc(sizeof *buff);
+        buff->data  = (uchar *)tmp;
+        buff->slen  = total;
+#  endif
         buff->mlen  = buff->slen + 1;
         buff->flags = BSTR_STANDARD;
 #else
+        unsigned total;
         /*
          * Without asprintf, because we can't determine the length of the
          * resulting string beforehand, a search has to be performed using the
@@ -1020,8 +965,6 @@ b_vformat(const char *const fmt, va_list arglist)
          * return the result that would have been printed if enough space were
          * available, so in theory this should take at most two attempts.
          */
-        unsigned total;
-
         if ((total = (2 * strlen(fmt))) < START_VSNBUFF)
                 total = START_VSNBUFF;
         buff = b_alloc_null(total + 2);
@@ -1053,7 +996,6 @@ b_vformat(const char *const fmt, va_list arglist)
         }
 #endif
 
-        talloc_set_destructor(buff, b_free);
         return buff;
 }
 

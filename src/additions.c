@@ -6,10 +6,13 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <sys/stat.h>
-#include <talloc.h>
 
 #include "bstring.h"
 
+#ifdef BSTR_USE_TALLOC
+#  include <talloc.h>
+#  define free talloc_free
+#endif
 
 /*============================================================================*/
 /*============================================================================*/
@@ -122,11 +125,9 @@ BSTRING_warn_(bool print_err, const char *fmt, ...)
 }
 #endif
 
-/*============================================================================*/
-/*============================================================================*/
 
-int
-b_memsep(bstring *dest, bstring *stringp, const char delim)
+static int
+do_b_memsep(bstring *dest, bstring *stringp, const char delim, const bool chomp_cr)
 {
         if (!dest || !stringp || NO_WRITE(stringp))
                 errx(1, "invalid input strings");
@@ -136,12 +137,14 @@ b_memsep(bstring *dest, bstring *stringp, const char delim)
         if (!stringp->data || stringp->slen == 0)
                 return 0;
 
-        const int64_t pos = b_strchr(stringp, delim);
-        int           ret = 1;
+        int64_t pos = b_strchr(stringp, delim);
+        int     ret = 1;
 
         if (pos >= 0) {
                 dest->data[pos] = '\0';
                 dest->slen      = pos;
+                if (chomp_cr && pos < stringp->slen + 1 && stringp->data[pos+1] == '\r')
+                        ++pos;
                 stringp->data   = stringp->data + pos + 1U;
                 stringp->slen  -= pos + 1U;
         } else {
@@ -153,8 +156,14 @@ b_memsep(bstring *dest, bstring *stringp, const char delim)
         return ret;
 }
 
-b_list *
-b_split_char(bstring *tosplit, const int delim, const bool destroy)
+int
+b_memsep(bstring *dest, bstring *stringp, const char delim)
+{
+        return do_b_memsep(dest, stringp, delim, false);
+}
+
+static b_list *
+do_b_split_char(bstring *tosplit, const int delim, const bool destroy, const bool chomp_cr)
 {
         if (INVALID(tosplit) || (!destroy && NO_WRITE(tosplit)))
                 RETURN_NULL();
@@ -163,15 +172,29 @@ b_split_char(bstring *tosplit, const int delim, const bool destroy)
         b_list  *ret   = b_list_create();
 
         bstring *tok = BSTR_NULL_INIT;
-        bstring *buf = &(bstring){split->data, split->slen, 0, split->flags};
+        bstring *buf = (bstring[]){
+            {.data = split->data, .slen = split->slen, .mlen = 0, .flags = split->flags}};
 
-        while (b_memsep(tok, buf, (char)delim)) {
+        while (do_b_memsep(tok, buf, (char)delim, chomp_cr)) {
                 b_list_append(ret, b_fromblk(tok->data, tok->slen));
         }
 
         b_destroy(split);
         return ret;
 }
+
+b_list *
+b_split_char(bstring *tosplit, const int delim, const bool destroy)
+{
+        return do_b_split_char(tosplit, delim, destroy, false);
+}
+
+b_list *
+b_split_lines(bstring *tosplit, const bool destroy)
+{
+        return do_b_split_char(tosplit, '\n', destroy, true);
+}
+
 
 /*============================================================================*/
 /* SOME CRAPPY ADDITIONS! */
@@ -194,6 +217,7 @@ _b_fwrite(FILE *fp, bstring *bstr, ...)
         va_end(va);
 }
 
+
 int
 _b_write(const int fd, bstring *bstr, ...)
 {
@@ -205,7 +229,7 @@ _b_write(const int fd, bstring *bstr, ...)
                                 break;
                         if (bstr->data && bstr->slen > 0) {
                                 ssize_t n, total = 0;
-                                int     tmp;
+                                int tmp;
                                 errno = 0;
                                 do {
                                         n = write(fd, bstr->data, bstr->slen);
@@ -222,6 +246,7 @@ _b_write(const int fd, bstring *bstr, ...)
         return BSTR_OK;
 }
 
+
 void
 _b_free_all(bstring **bstr, ...)
 {
@@ -231,14 +256,13 @@ _b_free_all(bstring **bstr, ...)
                 if (bstr && *bstr) {
                         if ((*bstr)->flags & BSTR_LIST_END)
                                 break;
-                        if ((*bstr)->data) {
+                        if ((*bstr)->data)
                                 b_destroy(*bstr);
-                                *bstr = NULL;
-                        }
                 }
         }
         va_end(va);
 }
+
 
 bstring *
 _b_concat_all(const bstring *join, const int join_end, ...)
@@ -296,6 +320,7 @@ _b_concat_all(const bstring *join, const int join_end, ...)
         return dest;
 }
 
+
 int
 _b_append_all(bstring *dest, const bstring *join, const int join_end, ...)
 {
@@ -348,7 +373,9 @@ _b_append_all(bstring *dest, const bstring *join, const int join_end, ...)
         return (dest->slen == size) ? BSTR_OK : BSTR_ERR;
 }
 
+
 /*============================================================================*/
+
 
 int 
 b_strcmp_fast(const bstring *a, const bstring *b)
@@ -368,6 +395,7 @@ b_strcmp_fast_wrap(const void *vA, const void *vB)
         return b_strcmp_fast(sA, sB);
 }
 
+
 int
 b_strcmp_wrap(const void *const vA, const void *const vB)
 {
@@ -375,38 +403,49 @@ b_strcmp_wrap(const void *const vA, const void *const vB)
                         (*(bstring const*const*const)(vB)));
 }
 
+
 bstring *
 b_steal(void *blk, const unsigned len)
 {
         if (!blk || len == 0)
                 RETURN_NULL();
+#ifdef BSTR_USE_TALLOC
         bstring *ret = talloc(NULL, bstring);
-        *ret = (bstring){
-            .slen  = len,
-            .mlen  = len + 1,
-            .data  = (uchar *)blk,
-            .flags = BSTR_STANDARD,
-        };
         talloc_steal(ret, blk);
         talloc_set_destructor(ret, b_free);
+#else
+        bstring *ret = malloc(sizeof *ret);
+#endif
+        *ret = (bstring){
+            .data  = (uchar *)blk,
+            .slen  = len,
+            .mlen  = len + 1,
+            .flags = BSTR_STANDARD,
+        };
         return ret;
 }
+
 
 bstring *
 b_refblk(void *blk, const unsigned len)
 {
         if (!blk || len == 0)
                 RETURN_NULL();
+#ifdef BSTR_USE_TALLOC
         bstring *ret = talloc(NULL, bstring);
+        talloc_set_destructor(ret, b_free);
+#else
+        bstring *ret = malloc(sizeof *ret);
+#endif
         *ret = (bstring){
+            .data  = (uchar *)blk,
             .slen  = len,
             .mlen  = len,
-            .data  = (uchar *)blk,
-            .flags = BSTR_WRITE_ALLOWED | BSTR_FREEABLE
+            .flags = BSTR_WRITE_ALLOWED | BSTR_FREEABLE /* | BSTR_CLONE */,
         };
-        talloc_set_destructor(ret, b_free);
         return ret;
 }
+
 
 bstring *
 b_clone(const bstring *const src)
@@ -414,17 +453,20 @@ b_clone(const bstring *const src)
         if (INVALID(src))
                 RETURN_NULL();
 
+#ifdef BSTR_USE_TALLOC
         bstring *ret = talloc(NULL, bstring);
-        *ret = (bstring){.slen  = src->slen,
-                         .mlen  = src->mlen,
-                         .flags = (src->flags & (~((uint8_t)BSTR_DATA_FREEABLE))),
-                         .data  = src->data};
-        ret->flags |= BSTR_CLONE;
-
-        b_writeprotect(ret);
         talloc_set_destructor(ret, b_free);
+#else
+        bstring *ret = malloc(sizeof *ret);
+#endif
+        memcpy(ret, src, sizeof(bstring));
+        ret->flags &= (~((uint8_t)BSTR_DATA_FREEABLE));
+        ret->flags |= BSTR_CLONE;
+        b_writeprotect(ret);
+
         return ret;
 }
+
 
 bstring *
 b_clone_swap(bstring *src)
@@ -432,18 +474,18 @@ b_clone_swap(bstring *src)
         if (INVALID(src) || NO_WRITE(src))
                 RETURN_NULL();
 
+#ifdef BSTR_USE_TALLOC
         bstring *ret = talloc(NULL, bstring);
-        *ret = (bstring){.slen  = src->slen,
-                         .mlen  = src->mlen,
-                         .flags = src->flags,
-                         .data  = src->data};
         talloc_steal(ret, src->data);
-
+        talloc_set_destructor(ret, b_free);
+#else
+        bstring *ret = malloc(sizeof *ret);
+#endif
+        memcpy(ret, src, sizeof(bstring));
         src->flags &= (~((uint8_t)BSTR_DATA_FREEABLE));
         src->flags |= BSTR_CLONE;
-
         b_writeprotect(src);
-        talloc_set_destructor(ret, b_free);
+
         return ret;
 }
 
@@ -468,15 +510,17 @@ b_strstr(const bstring *const haystack, const bstring *needle, const unsigned po
         return (int64_t)psub(ptr, haystack->data);
 }
 
+
 b_list *
 b_strsep(bstring *ostr, const char *const delim, const int refonly)
 {
         if (INVALID(ostr) || NO_WRITE(ostr) || !delim)
                 RETURN_NULL();
 
-        b_list  *ret  = b_list_create();
-        bstring *tok = BSTR_NULL_INIT;
-        bstring *str = &(bstring){ostr->data, ostr->slen, 0, ostr->flags};
+        b_list *ret   = b_list_create();
+        bstring tok[] = {BSTR_STATIC_INIT};
+        bstring str[] = {{.data = ostr->data, .slen = ostr->slen,
+                          .mlen = 0, .flags = ostr->flags}};
 
         if (refonly)
                 while (b_memsep(tok, str, delim[0]))
@@ -487,6 +531,7 @@ b_strsep(bstring *ostr, const char *const delim, const int refonly)
 
         return ret;
 }
+
 
 /*============================================================================*/
 /* strpbrk */
@@ -508,6 +553,7 @@ b_strpbrk_pos(const bstring *bstr, const unsigned pos, const bstring *delim)
         return (-1LL);
 }
 
+
 int64_t
 b_strrpbrk_pos(const bstring *bstr, const unsigned pos, const bstring *delim)
 {
@@ -524,6 +570,23 @@ b_strrpbrk_pos(const bstring *bstr, const unsigned pos, const bstring *delim)
 
         return (-1LL);
 }
+
+
+int
+b_advance(bstring *bstr, const unsigned n)
+{
+        if (n == 0)
+                return BSTR_OK;
+        if (INVALID(bstr) || NO_WRITE(bstr) || n > bstr->slen)
+                RUNTIME_ERROR();
+
+        bstr->slen  += n;
+        bstr->data  += n;
+        bstr->flags |= BSTR_BASE_MOVED;
+
+        return BSTR_OK;
+}
+
 
 /*============================================================================*/
 /* Path operations */
@@ -551,6 +614,7 @@ b_dirname(const bstring *path)
         RETURN_NULL();
 }
 
+
 bstring *
 b_basename(const bstring *path)
 {
@@ -572,20 +636,23 @@ b_basename(const bstring *path)
         RETURN_NULL();
 }
 
-bstring *
+
+int
 b_regularize_path(bstring *path)
 {
         if (INVALID(path) || NO_WRITE(path))
-                RETURN_NULL();
+                RUNTIME_ERROR();
         
-#if defined(_WIN32) || defined(_WIN64)
+/* #if defined(_WIN32) || defined(_WIN64) */
+#if 0
         for (unsigned i = 0; i < path->slen; ++i)
                 if (path->data[i] == '/')
                         path->data[i] = '\\';
 #endif
 
-        return path;
+        return BSTR_OK;
 }
+
 
 bstring *
 b_quickread(const char *const __restrict fmt, ...)
@@ -621,6 +688,7 @@ b_quickread(const char *const __restrict fmt, ...)
         return ret;
 }
 
+
 #define INIT_READ ((size_t)(8192LLU))
 
 bstring *
@@ -645,6 +713,7 @@ b_read_stdin(void)
         return buf;
 }
 
+
 #if 0
 #define INIT_READ ((size_t)(1 << 20))
 
@@ -652,7 +721,7 @@ static size_t
 getstdin(char **dest, FILE *fp)
 {
         size_t  total = 0;
-        char   *buf   = xmalloc(INIT_READ+1LLU);
+        char   *buf   = malloc(INIT_READ+1LLU);
         
         for (;;) {
                 size_t nread = fread(buf + total, 1, INIT_READ, fp);
@@ -680,12 +749,13 @@ b_read_fd(const int fd)
         size_t total = getstdin(&buf, fp);
         fclose(fp);
 
-        bstring *ret = xmalloc(sizeof *ret);
+        bstring *ret = malloc(sizeof *ret);
         *ret = (bstring){total, total+1, (uchar *)buf, BSTR_STANDARD};
         return ret;
 }
 #endif
 
+#define INIT_READ ((size_t)(8192LLU))
 #ifdef DOSISH
 #  define SSIZE_T size_t
 #else
@@ -716,6 +786,7 @@ b_read_fd(const int fd)
 }
 
 
+
 #if 0
 bstring *
 b_read_fd(const int fd)
@@ -723,8 +794,8 @@ b_read_fd(const int fd)
         /* size_t   total = 0; */
         bstring *ret   = b_alloc_null(INIT_READ+1LLU);
         /* FILE    *fp    = fdopen(fd, "rb"); */
-        /* bstring *ret   = xmalloc(sizeof *ret); */
-        /* *ret = (bstring){0, INIT_READ+1LLU, xcalloc(1, INIT_READ+1LLU), BSTR_STANDARD}; */
+        /* bstring *ret   = malloc(sizeof *ret); */
+        /* *ret = (bstring){0, INIT_READ+1LLU, calloc(1, INIT_READ+1LLU), BSTR_STANDARD}; */
 
         int ch = 0;
         while (read(fd, &ch, 1) != EOF)
@@ -751,6 +822,7 @@ b_read_fd(const int fd)
 }
 #endif
 
+
 /*============================================================================*/
 /* String Modiying  */
 /*============================================================================*/
@@ -762,7 +834,7 @@ b_insert_char(bstring *str, const unsigned location, const int ch)
                 RUNTIME_ERROR();
         if (INVALID(str) || NO_WRITE(str))
                 RUNTIME_ERROR();
-        if (str->mlen <= str->slen - 1)
+        if (str->mlen <= str->slen + 1)
                 b_growby(str, 1);
 
         memmove((str->data + location + 1), (str->data + location),
@@ -772,6 +844,7 @@ b_insert_char(bstring *str, const unsigned location, const int ch)
 
         return 0;
 }
+
 
 /*============================================================================*/
 /* Minor helper functions */
@@ -813,6 +886,7 @@ b_ll2str(const long long value)
         return ret;
 }
 
+
 static unsigned
 _tmp_ll2bstr(bstring *bstr, const long long value)
 {
@@ -837,6 +911,7 @@ _tmp_ll2bstr(bstring *bstr, const long long value)
 
         return bstr->slen;
 }
+
 
 static unsigned
 _tmp_ull2bstr(bstring *bstr, const unsigned long long value)
@@ -918,8 +993,10 @@ b_starts_with(const bstring *b0, const bstring *b1)
                 RUNTIME_ERROR();
         if (b0->slen < b1->slen)
                 return false;
-        return b_strncmp(b0, b1, b1->slen) == 0;
+
+        return memcmp(b0->data, b1->data, b1->slen) == 0;
 }
+
 
 int
 b_strip_leading_ws(bstring *bstr)
@@ -936,6 +1013,7 @@ b_strip_leading_ws(bstring *bstr)
         }
         return 0;
 }
+
 
 int
 b_strip_trailing_ws(bstring *bstr)
@@ -955,6 +1033,7 @@ b_strip_trailing_ws(bstring *bstr)
         return 0;
 }
 
+
 /*============================================================================*/
 /* Simple printf analogues. */
 /*============================================================================*/
@@ -969,6 +1048,7 @@ _b_sprintf(const bstring *fmt, ...)
         va_end(ap);
         return ret;
 }
+
 
 bstring *
 _b_vsprintf(const bstring *fmt, va_list args)
@@ -1077,7 +1157,7 @@ _b_vsprintf(const bstring *fmt, va_list args)
         }
 
         va_end(cpy);
-        bstring *ret = b_create(snapUpSize(len + 1U));
+        bstring *ret = b_alloc_null(snapUpSize(len + 1U));
         int64_t  x;
         pcnt = i = x = 0;
 
@@ -1120,7 +1200,7 @@ _b_vsprintf(const bstring *fmt, va_list args)
                 case 'd': {
                         uchar buf[INT64_MAX_CHARS + 1];
                         int n = 0;
-                        bstring tmp = {buf, 0, 0, 0};
+                        bstring tmp = {.data = buf, .slen = 0, .mlen = 0, .flags = 0};
 
                         switch (islong) {
                         case 0: {
@@ -1158,7 +1238,7 @@ _b_vsprintf(const bstring *fmt, va_list args)
                 case 'u': {
                         uchar buf[INT64_MAX_CHARS + 1];
                         int n = 0;
-                        bstring *tmp = &(bstring){buf, 0, 0, 0};
+                        bstring tmp[] = {{.data = buf, .slen = 0, .mlen = 0, .flags = 0}};
 
                         switch (islong) {
                         case 0: {
@@ -1223,6 +1303,7 @@ _b_vsprintf(const bstring *fmt, va_list args)
         return ret;
 }
 
+
 int
 _b_fprintf(FILE *out_fp, const bstring *fmt, ...)
 {
@@ -1233,6 +1314,7 @@ _b_fprintf(FILE *out_fp, const bstring *fmt, ...)
 
         return ret;
 }
+
 
 int
 _b_vfprintf(FILE *out_fp, const bstring *fmt, va_list args)
@@ -1249,6 +1331,7 @@ _b_vfprintf(FILE *out_fp, const bstring *fmt, va_list args)
         return ret;
 }
 
+
 int
 _b_dprintf(const int out_fd, const bstring *fmt, ...)
 {
@@ -1259,6 +1342,7 @@ _b_dprintf(const int out_fd, const bstring *fmt, ...)
 
         return ret;
 }
+
 
 int
 _b_vdprintf(const int out_fd, const bstring *fmt, va_list args)
@@ -1275,6 +1359,7 @@ _b_vdprintf(const int out_fd, const bstring *fmt, va_list args)
         return ret;
 }
 
+
 int
 _b_sprintfa(bstring *dest, const bstring *fmt, ...)
 {
@@ -1287,6 +1372,7 @@ _b_sprintfa(bstring *dest, const bstring *fmt, ...)
 
         return ret;
 }
+
 
 int
 _b_vsprintfa(bstring *dest, const bstring *fmt, va_list args)
@@ -1303,10 +1389,14 @@ _b_vsprintfa(bstring *dest, const bstring *fmt, va_list args)
         if (dest->mlen >= newlen) {
                 memcpy(dest->data + dest->slen, app->data, app->slen);
         } else {
+#ifdef BSTR_USE_TALLOC
                 uchar *buf = talloc_size(dest, newlen);
+#else
+                uchar *buf = malloc(newlen);
+#endif
                 memcpy(buf, dest->data, dest->slen);
                 memcpy(buf + dest->slen, app->data, app->slen);
-                talloc_free(dest->data);
+                free(dest->data);
                 dest->data = buf;
         }
 
@@ -1316,4 +1406,465 @@ _b_vsprintfa(bstring *dest, const bstring *fmt, va_list args)
         b_free(app);
 
         return BSTR_OK;
+}
+
+/*============================================================================*/
+/* General b_list operations */
+/*============================================================================*/
+
+b_list *
+b_list_create(void)
+{
+#ifdef BSTR_USE_TALLOC
+        b_list *sl = talloc(NULL, b_list);
+        sl->lst    = talloc_zero_array(sl, bstring *, 4);
+#else
+        b_list *sl = malloc(sizeof(b_list));
+        sl->lst    = calloc(4, sizeof(bstring *));
+#endif
+        sl->qty    = 0;
+        sl->mlen   = 1;
+        if (!sl->lst)
+                FATAL_ERROR("calloc failed");
+
+        return sl;
+}
+
+b_list *
+b_list_create_alloc(const uint msz)
+{
+        const int safesize = (msz == 0) ? 1 : msz;
+
+#ifdef BSTR_USE_TALLOC
+        b_list *sl = talloc(NULL, b_list);
+        sl->lst    = talloc_zero_array(sl, bstring *, safesize);
+#else
+        b_list *sl = malloc(sizeof(b_list));
+        sl->lst    = malloc(safesize * sizeof(bstring *));
+#endif
+        sl->qty    = 0;
+        sl->mlen   = safesize;
+        sl->lst[0] = NULL;
+
+        return sl;
+}
+
+
+int
+b_list_destroy(b_list *sl)
+{
+        if (!sl)
+                return BSTR_ERR;
+        for (uint i = 0; i < sl->qty; ++i)
+                if (sl->lst[i])
+                        b_destroy(sl->lst[i]);
+
+        sl->qty  = 0;
+        sl->mlen = 0;
+        free(sl->lst);
+        sl->lst  = NULL;
+        free(sl);
+
+        return BSTR_OK;
+}
+
+
+int
+b_list_alloc(b_list *sl, const uint msz)
+{
+        bstring **blen;
+        uint smsz;
+        if (!sl || msz == 0 || !sl->lst || sl->mlen == 0 || sl->qty > sl->mlen)
+                RUNTIME_ERROR();
+        if (sl->mlen >= msz)
+                return BSTR_OK;
+
+        smsz = snapUpSize(msz);
+
+#ifdef BSTR_USE_TALLOC
+        blen = talloc_realloc(NULL, sl->lst, bstring *, smsz);
+#else
+        size_t nsz = ((size_t)smsz) * sizeof(bstring *);
+        if (nsz < (size_t)smsz)
+                RUNTIME_ERROR();
+        blen = realloc(sl->lst, nsz);
+#endif
+        sl->mlen = smsz;
+        sl->lst  = blen;
+        return BSTR_OK;
+}
+
+
+int
+b_list_allocmin(b_list *sl, uint msz)
+{
+        bstring **blen;
+        size_t nsz;
+
+        if (!sl || msz == 0 || !sl->lst || sl->mlen == 0 || sl->qty > sl->mlen)
+                RUNTIME_ERROR();
+        if (msz < sl->qty)
+                msz = sl->qty;
+        if (sl->mlen == msz)
+                return BSTR_OK;
+
+        nsz = ((size_t)msz) * sizeof(bstring *);
+
+        if (nsz < (size_t)msz)
+                RUNTIME_ERROR();
+
+#ifdef BSTR_USE_TALLOC
+        blen = talloc_realloc_size(NULL, sl->lst, nsz);
+#else
+        blen = realloc(sl->lst, nsz);
+#endif
+        if (!blen)
+                RUNTIME_ERROR();
+
+        sl->mlen = msz;
+        sl->lst  = blen;
+
+        return BSTR_OK;
+}
+
+
+bstring *
+b_join(const b_list *bl, const bstring *sep)
+{
+        if (!bl || INVALID(sep))
+                RETURN_NULL();
+        int64_t total = 1;
+
+        for (uint i = 0; i < bl->qty; ++i) {
+                const uint v = bl->lst[i]->slen;
+                total += v;
+                if (total > UINT32_MAX)
+                        RETURN_NULL();
+        }
+
+        if (sep)
+                total += (bl->qty - 1) * sep->slen;
+
+#ifdef BSTR_USE_TALLOC
+        bstring *bstr = talloc(NULL, bstring);
+        bstr->data    = talloc_size(bstr, total);
+        talloc_set_destructor(bstr, b_free);
+#else
+        bstring *bstr = malloc(sizeof(bstring));
+        bstr->data    = malloc(total);
+#endif
+        bstr->slen    = total - 1;
+        bstr->mlen    = total;
+        bstr->flags   = BSTR_STANDARD;
+        total         = 0;
+
+        for (uint i = 0; i < bl->qty; ++i) {
+                if (i > 0 && sep) {
+                        memcpy(bstr->data + total, sep->data, sep->slen);
+                        total += sep->slen;
+                }
+                const uint v = bl->lst[i]->slen;
+                memcpy(bstr->data + total, bl->lst[i]->data, v);
+                total += v;
+        }
+        bstr->data[total] = (uchar)'\0';
+
+        return bstr;
+}
+
+
+bstring *
+b_join_quote(const b_list *bl, const bstring *sep, const int ch)
+{
+        if (!bl || INVALID(sep) || !ch)
+                RETURN_NULL();
+        const uint sepsize = (sep) ? sep->slen : 0;
+        int64_t    total   = 1;
+
+        B_LIST_FOREACH(bl, bstr, i)
+                total += bstr->slen + sepsize + 2u;
+        if (total > UINT32_MAX)
+                RETURN_NULL();
+
+#ifdef BSTR_USE_TALLOC
+        bstring *bstr = talloc(NULL, bstring);
+        bstr->data    = talloc_size(bstr, total);
+        talloc_set_destructor(bstr, b_free);
+#else
+        bstring *bstr = malloc(sizeof(bstring));
+        bstr->data    = malloc(total);
+#endif
+        bstr->slen    = 0;
+        bstr->mlen    = total - (2 * sepsize);
+        bstr->flags   = BSTR_STANDARD;
+
+        B_LIST_FOREACH(bl, cur, i) {
+                if (sep && i > 0) {
+                        memcpy(bstr->data + bstr->slen, sep->data, sep->slen);
+                        bstr->slen += sep->slen;
+                }
+
+                bstr->data[bstr->slen++] = (uchar)ch;
+                memcpy((bstr->data + bstr->slen), cur->data, cur->slen);
+                bstr->slen += cur->slen;
+                bstr->data[bstr->slen++] = (uchar)ch;
+        }
+
+        bstr->data[bstr->slen] = (uchar)'\0';
+
+        if (bstr->slen != bstr->mlen)
+                warnx("Failed operation, %u is smaller than %"PRId64"!", bstr->slen, total);
+
+        return bstr;
+}
+
+
+/*============================================================================*/
+
+
+void
+_b_list_dump(FILE *fp, const b_list *list, const char *listname)
+{
+        fprintf(fp, "Dumping list \"%s\"\n", listname);
+        for (unsigned i = 0; i < list->qty; ++i)
+                b_fwrite(fp, list->lst[i], b_tmp("\n"));
+        fputc('\n', fp);
+}
+
+
+void
+_b_list_dump_fd(const int fd, const b_list *list, const char *listname)
+{
+        dprintf(fd, "Dumping list \"%s\"\n", listname);
+        for (unsigned i = 0; i < list->qty; ++i) {
+                if (!list->lst[i] || list->lst[i]->slen == 0)
+                        b_write(fd, B("(NULL)\n"));
+                else
+                        b_write(fd, list->lst[i], b_tmp("\n"));
+        }
+        if (write(fd, "\n", 1) != 1)
+                warn("write error");
+}
+
+
+int
+b_list_append(b_list *list, bstring *bstr)
+{
+        if (!list || !list->lst)
+                RUNTIME_ERROR();
+
+        if (list->qty >= (list->mlen)) {
+#ifdef BSTR_USE_TALLOC
+                bstring **tmp = talloc_realloc(NULL, list->lst, bstring *, list->mlen *= 2);
+#else
+                bstring **tmp = nrealloc(list->lst, (list->mlen *= 2), sizeof(bstring *));
+#endif
+                list->lst = tmp;
+        }
+        list->lst[list->qty++] = bstr;
+
+        return BSTR_OK;
+}
+
+
+int
+b_list_remove(b_list *list, const unsigned index)
+{
+        if (!list || !list->lst || index >= list->qty)
+                RUNTIME_ERROR();
+
+        b_destroy(list->lst[index]);
+        list->lst[index] = NULL;
+
+        memmove(list->lst + index, list->lst + index + 1, --list->qty - index);
+        return BSTR_OK;
+}
+
+
+b_list *
+b_list_copy(const b_list *list)
+{
+        if (!list || !list->lst)
+                RETURN_NULL();
+
+        b_list *ret = b_list_create_alloc(list->qty);
+
+        for (unsigned i = 0; i < list->qty; ++i) {
+                ret->lst[ret->qty] = b_strcpy(list->lst[i]);
+                b_writeallow(ret->lst[ret->qty]);
+                ++ret->qty;
+        }
+
+        return ret;
+}
+
+
+b_list *
+b_list_clone(const b_list *const list)
+{
+        if (!list || !list->lst)
+                RETURN_NULL();
+
+        b_list *ret = b_list_create_alloc(list->qty);
+
+        for (unsigned i = 0; i < list->qty; ++i) {
+                ret->lst[ret->qty] = b_clone(list->lst[i]);
+                ++ret->qty;
+        }
+
+        return ret;
+}
+
+
+b_list *
+b_list_clone_swap(b_list *list)
+{
+        if (!list || !list->lst)
+                RETURN_NULL();
+
+        b_list *ret = b_list_create_alloc(list->qty);
+
+        for (unsigned i = 0; i < list->qty; ++i) {
+                ret->lst[ret->qty] = b_clone_swap(list->lst[i]);
+                ++ret->qty;
+        }
+
+        return ret;
+}
+
+
+int
+b_list_writeprotect(b_list *list)
+{
+        if (!list || !list->lst)
+                RUNTIME_ERROR();
+
+        B_LIST_FOREACH(list, bstr, i)
+                if (!INVALID(bstr))
+                        b_writeprotect(bstr);
+
+        return BSTR_OK;
+}
+
+
+int
+b_list_writeallow(b_list *list)
+{
+        if (!list || !list->lst)
+                RUNTIME_ERROR();
+
+        B_LIST_FOREACH(list, bstr, i)
+                if (!INVALID(bstr))
+                        b_writeallow(bstr);
+
+        return BSTR_OK;
+}
+
+
+int
+b_list_merge(b_list **dest, b_list *src, const int flags)
+{
+        if (!dest || !*dest || !(*dest)->lst)
+                RUNTIME_ERROR();
+        if (!src || !src->lst)
+                RUNTIME_ERROR();
+        if (src->qty == 0)
+                return BSTR_ERR;
+
+        const unsigned size = ((*dest)->qty + src->qty);
+        if ((*dest)->mlen < size)
+#ifdef BSTR_USE_TALLOC
+                (*dest)->lst = talloc_realloc(NULL, (*dest)->lst, bstring *,
+                                              (size_t)((*dest)->mlen = size));
+#else
+                (*dest)->lst = realloc((*dest)->lst,
+                                (size_t)((*dest)->mlen = size) * sizeof(bstring *));
+#endif
+
+        for (unsigned i = 0; i < src->qty; ++i)
+                (*dest)->lst[(*dest)->qty++] = src->lst[i];
+
+        if (flags & BSTR_M_DEL_SRC) {
+                free(src->lst);
+                free(src);
+        }
+        if (flags & BSTR_M_DEL_DUPS)
+                b_list_remove_dups(dest);
+        else if (flags & BSTR_M_SORT_FAST)
+                B_LIST_SORT_FAST(*dest);
+        if (!(flags & BSTR_M_SORT_FAST) && (flags & BSTR_M_SORT))
+                B_LIST_SORT(*dest);
+
+        return BSTR_OK;
+}
+
+
+int
+b_list_remove_dups(b_list **listp)
+{
+        if (!listp || !*listp || !(*listp)->lst || (*listp)->qty == 0)
+                RUNTIME_ERROR();
+
+        b_list *toks = b_list_create_alloc((*listp)->qty * 10);
+
+        for (unsigned i = 0; i < (*listp)->qty; ++i) {
+                b_list *tmp = b_strsep((*listp)->lst[i], " ", 0);
+                if (!tmp)
+                        continue;
+                for (unsigned x = 0; x < tmp->qty; ++x)
+                        b_list_append(toks, tmp->lst[x]);
+                free(tmp->lst);
+                free(tmp);
+        }
+
+        b_list_destroy(*listp);
+
+        qsort(toks->lst, toks->qty, sizeof(bstring *), &b_strcmp_fast_wrap);
+
+        b_list *uniq = b_list_create_alloc(toks->qty);
+        uniq->lst[0] = toks->lst[0];
+        uniq->qty    = 1;
+        b_writeprotect(uniq->lst[0]);
+
+        for (unsigned i = 1; i < toks->qty; ++i) {
+                if (!b_iseq(toks->lst[i], toks->lst[i-1])) {
+                        uniq->lst[uniq->qty] = toks->lst[i];
+                        b_writeprotect(uniq->lst[uniq->qty]);
+                        ++uniq->qty;
+                }
+        }
+
+        b_list_destroy(toks);
+        for (unsigned i = 0; i < uniq->qty; ++i)
+                b_writeallow(uniq->lst[i]);
+
+        *listp = uniq;
+        return BSTR_OK;
+}
+
+
+bstring *
+b_list_join(const b_list *list, const bstring *sep)
+{
+        if (!list || !list->lst || list->qty == 0)
+                RETURN_NULL();
+        unsigned total = 1;
+        unsigned seplen = (sep != NULL) ? sep->slen : 0;
+
+        B_LIST_FOREACH (list, str, i)
+                total += str->slen + seplen;
+        
+        bstring *ret = b_alloc_null(total);
+
+        B_LIST_FOREACH (list, str, i) {
+                memcpy(ret->data + ret->slen, str->data, str->slen);
+                ret->slen += str->slen;
+                if (sep != NULL) {
+                        memcpy(ret->data + ret->slen, sep->data, sep->slen);
+                        ret->slen += sep->slen;
+                }
+        }
+
+        ret->data[ret->slen] = '\0';
+        return ret;
 }

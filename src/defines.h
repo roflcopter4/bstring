@@ -5,10 +5,10 @@
 #ifndef BSTRLIB_DEFINES_H
 #define BSTRLIB_DEFINES_H
 
-#if (__GNUC__ >= 4)
+#ifdef __GNUC__
+#  define INLINE static __inline__ __attribute__((__always_inline__))
 #  define BSTR_PUBLIC  __attribute__((__visibility__("default")))
 #  define BSTR_PRIVATE __attribute__((__visibility__("hidden")))
-#  define INLINE       __attribute__((__always_inline__)) static inline
 #  ifndef _GNU_SOURCE
 #    define _GNU_SOURCE
 #  endif
@@ -30,15 +30,15 @@
 #  define BSTR_UNUSED
 #endif
 
-#if !defined(__GNUC__)
+#if defined(__GNUC__)
+#  if !defined(__clang__)
+#    define __aDESINIT __attribute__((__designated_init__))
+#  else
+#    define __aDESINIT
+#  endif
+#else
 #  define __attribute__(...)
 #endif
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-typedef unsigned char uchar;
 
 #include <ctype.h>
 #include <limits.h>
@@ -60,13 +60,19 @@ typedef unsigned char uchar;
 #define BSTR_OK (0)
 #define BSTR_BS_BUFF_LENGTH_GET (0)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef unsigned char uchar;
+
 enum BSTR_flags {
         BSTR_WRITE_ALLOWED = 0x01U,
         BSTR_FREEABLE      = 0x02U,
         BSTR_DATA_FREEABLE = 0x04U,
         BSTR_LIST_END      = 0x08U,
         BSTR_CLONE         = 0x10U,
-        BSTR_MASK_USR3     = 0x20U,
+        BSTR_BASE_MOVED    = 0x20U,
         BSTR_MASK_USR2     = 0x40U,
         BSTR_MASK_USR1     = 0x80U,
 };
@@ -77,7 +83,7 @@ enum BSTR_flags {
 typedef struct bstring_s    bstring;
 typedef struct bstring_list b_list;
 
-struct bstring_s {
+struct __aDESINIT bstring_s {
         unsigned char *data;
         unsigned int   slen;
         unsigned int   mlen;
@@ -85,7 +91,7 @@ struct bstring_s {
 };
 #pragma pack(pop)
 
-struct bstring_list {
+struct __aDESINIT bstring_list {
         bstring **lst;
         unsigned  qty;
         unsigned  mlen;

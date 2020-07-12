@@ -26,16 +26,30 @@ extern "C" {
 
 
 /**
- * Dumber macro which simply returns the data of a bstring cast to char *. No
- * checking is performed. The program is hopeless anyway if it is accessing NULL
- * memory and should crash.
+ * Simple macro which returns the data of a bstring cast to char *
  */
 #if __STDC_VERSION__ >= 201112LL
-#  define BS(BSTR)                                                     \
+#  if defined __GNUC__ && 0
+#define BS(BSTR)                                                         \
+        __extension__({                                                  \
+                _Pragma("GCC diagnostic push");                          \
+                _Pragma("GCC diagnostic ignored \"-Waddress\"");         \
+                __auto_type mbstr_ = (BSTR);                             \
+                char *mbstr_cstr_ = (mbstr_)                             \
+                        ? _Generic((mbstr_),                             \
+                            const bstring *: ((char *)((mbstr_)->data)), \
+                                  bstring *: ((char *)((mbstr_)->data))) \
+                        : "(null)";                                      \
+                _Pragma("GCC diagnostic pop");                           \
+                mbstr_cstr_;                                             \
+        })
+#else
+#    define BS(BSTR)                                                     \
         ((BSTR) ? _Generic((BSTR),                                     \
                             const bstring *: ((char *)((BSTR)->data)), \
                                   bstring *: ((char *)((BSTR)->data))) \
                 : "(null)")
+#  endif
 
 #  define BTS(BSTR) _Generic((BSTR), bstring: ((char *)((BSTR).data)))
 #else
@@ -325,7 +339,7 @@ BSTR_PUBLIC _Bool   b_starts_with(const bstring *b0, const bstring *b1);
 #define b_strpbrk(BSTR_, DELIM_) b_strpbrk_pos((BSTR_), 0, (DELIM_))
 #define b_strrpbrk(BSTR_, DELIM_) b_strrpbrk_pos((BSTR_), ((BSTR_)->slen), (DELIM_))
 
-BSTR_PUBLIC int        b_regularize_path(bstring *path);
+BSTR_PUBLIC int        b_regularize_path(bstring *path) __attribute__((pure));
 BSTR_PUBLIC bstring   *b_dirname(const bstring *path);
 BSTR_PUBLIC bstring   *b_basename(const bstring *path);
 BSTR_PUBLIC int        b_chomp(bstring *bstr);
@@ -358,7 +372,7 @@ BSTR_PUBLIC int        _b_vsprintfa(bstring *dest, const bstring *fmt, va_list a
 #define b_eprintf(...) b_fprintf(stderr, __VA_ARGS__)
 
 BSTR_PUBLIC bstring *b_ll2str(const long long value);
-BSTR_PUBLIC int      b_strcmp_fast(const bstring *a, const bstring *b);
+BSTR_PUBLIC int      b_strcmp_fast(const bstring *a, const bstring *b) __attribute__((pure));
 BSTR_PUBLIC int      b_strcmp_fast_wrap(const void *vA, const void *vB) __attribute__((pure));
 BSTR_PUBLIC int      b_strcmp_wrap(const void *vA, const void *vB) __attribute__((pure));
 

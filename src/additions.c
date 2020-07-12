@@ -1418,6 +1418,7 @@ b_list_create(void)
 #ifdef BSTR_USE_TALLOC
         b_list *sl = talloc(NULL, b_list);
         sl->lst    = talloc_zero_array(sl, bstring *, 4);
+        talloc_set_destructor(sl, b_list_destroy);
 #else
         b_list *sl = malloc(sizeof(b_list));
         sl->lst    = calloc(4, sizeof(bstring *));
@@ -1438,6 +1439,7 @@ b_list_create_alloc(const uint msz)
 #ifdef BSTR_USE_TALLOC
         b_list *sl = talloc(NULL, b_list);
         sl->lst    = talloc_zero_array(sl, bstring *, safesize);
+        talloc_set_destructor(sl, b_list_destroy);
 #else
         b_list *sl = malloc(sizeof(b_list));
         sl->lst    = malloc(safesize * sizeof(bstring *));
@@ -1663,6 +1665,10 @@ b_list_append(b_list *list, bstring *bstr)
         }
         list->lst[list->qty++] = bstr;
 
+//#ifdef BSTR_USE_TALLOC
+//        talloc_steal(list, bstr);
+//#endif
+
         return BSTR_OK;
 }
 
@@ -1692,6 +1698,9 @@ b_list_copy(const b_list *list)
         for (unsigned i = 0; i < list->qty; ++i) {
                 ret->lst[ret->qty] = b_strcpy(list->lst[i]);
                 b_writeallow(ret->lst[ret->qty]);
+//#ifdef BSTR_USE_TALLOC
+//        talloc_steal(ret, ret->lst[ret->qty]);
+//#endif
                 ++ret->qty;
         }
 

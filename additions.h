@@ -98,20 +98,20 @@ extern "C" {
  */
 
 #define bt_fromblk(BLK, LEN) \
-        ((bstring){ .slen = (LEN), .mlen = 0, .data = ((uchar *)(BLK)), .flags = 0x00u })
+        ((bstring){ .data = ((uchar *)(BLK)), .slen = (LEN), .mlen = 0, .flags = 0 })
 
 #define bt_fromcstr(CSTR) \
-        ((bstring){ .slen = strlen(CSTR), .mlen = 0, .data = ((uchar *)(CSTR)), .flags = 0x00u })
+        ((bstring){ .data = ((uchar *)(CSTR)), .slen = strlen(CSTR), .mlen = 0, .flags = 0 })
 
 #define bt_fromarray(CSTR) \
-        ((bstring){ .slen = (sizeof(CSTR) - 1), .mlen = 0, .data = (uchar *)(CSTR), .flags = 0x00u })
+        ((bstring){ .data = (uchar *)(CSTR), .slen = (sizeof(CSTR) - 1), .mlen = 0, .flags = 0 })
 
 
 #define btp_fromblk(BLK, LEN) \
-        ((bstring[]){{ .data = ((uchar *)(BLK)), .slen = (LEN), .mlen = 0, .flags = 0x00U}})
+        ((bstring[]){{ .data = ((uchar *)(BLK)), .slen = (LEN), .mlen = 0, .flags = 0}})
 
 #define btp_fromcstr(STR_) \
-        ((bstring[]){{ .data = ((uchar *)(STR_)), .slen = strlen(STR_), .mlen = 0, .flags = 0x00U}})
+        ((bstring[]){{ .data = ((uchar *)(STR_)), .slen = strlen(STR_), .mlen = 0, .flags = 0}})
 
 #define btp_fromarray(CARRAY_) \
         ((bstring[]){{ .data  = ((uchar *)(CARRAY_)), .slen  = (sizeof(CARRAY_) - 1), .mlen  = 0, .flags = 0}})

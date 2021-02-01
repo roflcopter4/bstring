@@ -776,8 +776,10 @@ b_read_fd(const int fd)
                                 break;
                         }
                         b_growby(ret, INIT_READ);
-                } else {
+                } else if (nread == 0) {
                         break;
+                } else {
+                        err(1, "read()");  
                 }
         }
 

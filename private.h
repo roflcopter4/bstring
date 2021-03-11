@@ -145,7 +145,7 @@ static inline int dprintf(int fd, char *fmt, ...)
  */
 #define MAX(a, b) (((a) >= (b)) ? (a) : (b))
 #define MIN(a, b) (((a) <= (b)) ? (a) : (b))
-#define psub(PTR1, PTR2) ((ptrdiff_t)(PTR1) - (ptrdiff_t)(PTR2))
+#define PTRSUB(PTR1, PTR2) ((ptrdiff_t)(PTR1) - (ptrdiff_t)(PTR2))
 
 
 /*============================================================================*/
@@ -189,174 +189,10 @@ static inline int dprintf(int fd, char *fmt, ...)
 
 /*============================================================================*/
 
-#if 0
-#define USE_XMALLOC
-
-/* #ifdef USE_XMALLOC */
-#if 0
-#  define ALWAYS_INLINE __always_inline
-
-__attribute__((nothrow, warn_unused_result, malloc, alloc_size(1)))
-__attribute__((visibility("hidden")))
-ALWAYS_INLINE void *
-BSTR_malloc(const size_t size)
-{
-        void *tmp = malloc(size);
-        if (tmp == NULL)
-                err(100, "Malloc call failed - attempted %zu bytes", size);
-        return tmp;
-}
-
-__attribute__((nothrow, warn_unused_result, malloc, alloc_size(1, 2)))
-__attribute__((visibility("hidden")))
-ALWAYS_INLINE  void *
-BSTR_calloc(const size_t num, const size_t size)
-{
-        void *tmp = calloc(num, size);
-        if (tmp == NULL)
-                err(101, "Calloc call failed - attempted %zu bytes", size);
-        return tmp;
-}
-
-#  define malloc BSTR_malloc
-#  define calloc BSTR_calloc
-
-
-#  ifdef HAVE_VASPRINTF
-__attribute__((format(__gnu_printf__, 2, 0), nothrow, warn_unused_result, nonnull(1, 2)))
-__attribute__((visibility("hidden")))
-ALWAYS_INLINE int
-BSTR_xvasprintf(char **ptr, const char *const restrict fmt, va_list va)
-{
-        int ret = vasprintf(ptr, fmt, va);
-        if (ret == (-1)) {
-                warn("Asprintf failed to allocate memory");
-                abort();
-        }
-        return ret;
-}
-
-#  define xvasprintf BSTR_xvasprintf
-#  endif
-
-__attribute__((nothrow, warn_unused_result, alloc_size(2)))
-__attribute__((visibility("hidden")))
-ALWAYS_INLINE void *
-BSTR_realloc(void *ptr, const size_t size)
-{
-        void *tmp = realloc(ptr, size);
-        if (tmp == NULL)
-                err(102, "Realloc call failed - attempted %zu bytes", size);
-        return tmp;
-}
-
-#define realloc BSTR_realloc
-
-#if defined(HAVE_REALLOCARRAY) && !defined(WITH_JEMALLOC)
-__attribute__((nothrow, warn_unused_result, alloc_size(2, 3)))
-__attribute__((visibility("hidden")))
-ALWAYS_INLINE void *
-BSTR_reallocarray(void *ptr, size_t num, size_t size)
-{
-        void *tmp = reallocarray(ptr, num, size);
-        if (tmp == NULL)
-                err(103, "Realloc call failed - attempted %zu bytes", size);
-        return tmp;
-}
-
-#  define reallocarray              BSTR_reallocarray
-#  define nmalloc(NUM_, SIZ_)        reallocarray(NULL, (NUM_), (SIZ_))
-#  define nrealloc(PTR_, NUM_, SIZ_) reallocarray((PTR_), (NUM_), (SIZ_))
-#else
-#  define nmalloc(NUM_, SIZ_)        malloc(((size_t)(NUM_)) * ((size_t)(SIZ_)))
-#  define nrealloc(PTR_, NUM_, SIZ_) realloc((PTR_), ((size_t)(NUM_)) * ((size_t)(SIZ_)))
-#endif
-#else
-#  define malloc  malloc
-#  define calloc  calloc
-#  define realloc realloc
-
-#  define nmalloc(NUM_, SIZ_)        malloc(((size_t)(NUM_)) * ((size_t)(SIZ_)))
-#  define nrealloc(PTR_, NUM_, SIZ_) realloc((PTR_), ((size_t)(NUM_)) * ((size_t)(SIZ_)))
-
-#  if defined(HAVE_REALLOCARRAY) && !defined(WITH_JEMALLOC)
-#    define reallocarray reallocarray
-#  else
-#    define reallocarray nrealloc
-#  endif
-#  ifdef HAVE_VASPRINTF
-#    define xvasprintf vasprintf
-#  endif
-#endif
-#define free(PTR) free(PTR)
-#endif
 
 #define nmalloc(NUM_, SIZ_)        malloc(((size_t)(NUM_)) * ((size_t)(SIZ_)))
 #define nrealloc(PTR_, NUM_, SIZ_) realloc((PTR_), ((size_t)(NUM_)) * ((size_t)(SIZ_)))
 #define nalloca(NUM_, SIZ_) alloca(((size_t)(NUM_)) * ((size_t)(SIZ_)))
-
-#if 0
-/* 
- * These make the code neater and save the programmer from having to check for
- * NULL returns at the cost of crashing the program at any allocation failure. I
- * see this as a net benefit. Not many programs can meaninfully continue when no
- * memory is left on the system (a very rare occurance anyway).
- */
-#ifdef USE_XMALLOC
-__attribute__((__malloc__, __always_inline__))
-static inline void *
-malloc(const size_t size)
-{
-        void *tmp = malloc(size);
-        if (tmp == NULL)
-                FATAL_ERROR("Malloc call failed - attempted %zu bytes", size);
-        return tmp;
-}
-
-__attribute__((__always_inline__))
-static inline void *
-calloc(const int num, const size_t size)
-{
-        void *tmp = calloc(num, size);
-        if (tmp == NULL)
-                FATAL_ERROR("Calloc call failed - attempted %zu bytes", size);
-        return tmp;
-}
-#else
-#  define malloc malloc
-#  define calloc calloc
-#endif
-
-__attribute__((__always_inline__))
-static inline void *
-realloc(void *ptr, size_t size)
-{
-        void *tmp = realloc(ptr, size);
-        if (!tmp)
-                FATAL_ERROR("Realloc call failed - attempted %zu bytes", size);
-        return tmp; 
-}
-
-#ifdef HAVE_VASPRINTF
-#  ifdef USE_XMALLOC
-__attribute__((__format__(__gnu_printf__, 2, 0), __always_inline__))
-static inline int
-xvasprintf(char **ptr, const char *const restrict fmt, va_list va)
-{
-        int ret = vasprintf(ptr, fmt, va);
-        if (ret == (-1)) {
-                warn("Asprintf failed to allocate memory");
-                abort();
-        }
-        return ret;
-}
-#  else
-#    define xvasprintf vasprintf
-#  endif
-#endif
-
-#define free free
-#endif
 
 /*============================================================================*/
 

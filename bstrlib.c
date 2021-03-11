@@ -43,6 +43,8 @@
 #ifdef BSTR_USE_TALLOC
 #  include <talloc.h>
 #  define free talloc_free
+#else
+# error ass
 #endif
 
 /**
@@ -157,20 +159,24 @@ b_free(bstring *bstr)
 
         if ((!(bstr->flags & BSTR_WRITE_ALLOWED) ||
               (bstr->flags & BSTR_BASE_MOVED)) && !IS_CLONE(bstr))
-                RUNTIME_ERROR();
+                return (-1);
+                /* RUNTIME_ERROR(); */
                 /* FATAL_ERROR("bstring runtime error: Attempt to free non-writable which is not a clone"); */
 
         if (bstr->data && (bstr->flags & BSTR_DATA_FREEABLE))
-                free(bstr->data);
+                talloc_free(bstr->data);
 
         bstr->data = NULL;
         bstr->slen = bstr->mlen = (-1);
 
         if (!(bstr->flags & BSTR_FREEABLE))
-                RUNTIME_ERROR();
+                return (-1);
+
+                /* RUNTIME_ERROR(); */
                 /* FATAL_ERROR("bstring runtime error: Attempt to free non-freeable bstring"); */
 
-        free(bstr);
+        /* free(bstr); */
+        talloc_free(bstr);
         return BSTR_OK;
 }
 

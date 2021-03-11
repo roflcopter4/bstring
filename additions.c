@@ -500,14 +500,14 @@ b_strstr(const bstring *const haystack, const bstring *needle, const unsigned po
         if (INVALID(haystack) || INVALID(needle))
                 RUNTIME_ERROR();
         if (haystack->slen < needle->slen || pos > haystack->slen)
-                return (-1);
+                return INT64_C(-1);
 
-        char *ptr = strstr((char *)(haystack->data + pos), BS(needle));
+        const char *const ptr = strstr((char *)(haystack->data + pos), BS(needle));
 
         if (!ptr)
-                return (-1);
+                return INT64_C(-1);
 
-        return (int64_t)psub(ptr, haystack->data);
+        return (int64_t)PTRSUB(ptr, haystack->data);
 }
 
 
@@ -876,7 +876,7 @@ b_ll2str(const long long value)
 
         /* Compute length and add null term. */
         *rev--    = (uchar)'\0';
-        ret->slen = psub(rev, ret->data) + 1U;
+        ret->slen = PTRSUB(rev, ret->data) + 1U;
 
         /* Reverse the string. */
         while (fwd < rev) {
@@ -904,7 +904,7 @@ _tmp_ll2bstr(bstring *bstr, const long long value)
                 *rev++ = (uchar)'-';
 
         *rev--     = (uchar)'\0';
-        bstr->slen = psub(rev, bstr->data) + 1U;
+        bstr->slen = PTRSUB(rev, bstr->data) + 1U;
         while (fwd < rev) {
                 const uchar swap = *fwd;
                 *fwd++           = *rev;
@@ -928,7 +928,7 @@ _tmp_ull2bstr(bstring *bstr, const unsigned long long value)
         } while (inv);
 
         *rev--     = (uchar)'\0';
-        bstr->slen = psub(rev, bstr->data) + 1U;
+        bstr->slen = PTRSUB(rev, bstr->data) + 1U;
         while (fwd < rev) {
                 const uchar swap = *fwd;
                 *fwd++           = *rev;
@@ -971,7 +971,7 @@ b_replace_ch(bstring *bstr, const int find, const int replacement)
 
         while ((ptr = memchr(dat, find, len))) {
                 *ptr = replacement;
-                len -= (unsigned)psub(dat, ptr);
+                len -= (unsigned)PTRSUB(dat, ptr);
                 dat  = ptr + 1;
         }
 
@@ -1459,15 +1459,15 @@ b_list_destroy(b_list *sl)
 {
         if (!sl)
                 return BSTR_ERR;
-        for (uint i = 0; i < sl->qty; ++i)
-                if (sl->lst[i])
-                        b_destroy(sl->lst[i]);
+        //for (uint i = 0; i < sl->qty; ++i)
+        //        if (sl->lst[i])
+        //                b_destroy(sl->lst[i]);
 
         sl->qty  = 0;
         sl->mlen = 0;
-        free(sl->lst);
+        talloc_free(sl->lst);
         sl->lst  = NULL;
-        free(sl);
+        talloc_free(sl);
 
         return BSTR_OK;
 }
@@ -1659,7 +1659,7 @@ b_list_append(b_list *list, bstring *bstr)
 
         if (list->qty >= (list->mlen)) {
 #ifdef BSTR_USE_TALLOC
-                bstring **tmp = talloc_realloc(NULL, list->lst, bstring *, list->mlen *= 2);
+                bstring **tmp = talloc_realloc(list, list->lst, bstring *, list->mlen *= 2);
 #else
                 bstring **tmp = nrealloc(list->lst, (list->mlen *= 2), sizeof(bstring *));
 #endif
@@ -1667,9 +1667,10 @@ b_list_append(b_list *list, bstring *bstr)
         }
         list->lst[list->qty++] = bstr;
 
-//#ifdef BSTR_USE_TALLOC
-//        talloc_steal(list, bstr);
-//#endif
+#ifdef BSTR_USE_TALLOC
+        if (bstr->flags & BSTR_FREEABLE)
+                talloc_steal(list, bstr);
+#endif
 
         return BSTR_OK;
 }
@@ -1700,9 +1701,10 @@ b_list_copy(const b_list *list)
         for (unsigned i = 0; i < list->qty; ++i) {
                 ret->lst[ret->qty] = b_strcpy(list->lst[i]);
                 b_writeallow(ret->lst[ret->qty]);
-//#ifdef BSTR_USE_TALLOC
-//        talloc_steal(ret, ret->lst[ret->qty]);
-//#endif
+#ifdef BSTR_USE_TALLOC
+                if (ret->lst[ret->qty] && (ret->lst[ret->qty]->flags & BSTR_FREEABLE))
+                        talloc_steal(ret->lst, ret->lst[ret->qty]);
+#endif
                 ++ret->qty;
         }
 
@@ -1796,8 +1798,12 @@ b_list_merge(b_list **dest, b_list *src, const int flags)
                 (*dest)->lst[(*dest)->qty++] = src->lst[i];
 
         if (flags & BSTR_M_DEL_SRC) {
+#ifdef BSTR_USE_TALLOC
+                talloc_free(src);
+#else
                 free(src->lst);
                 free(src);
+#endif
         }
         if (flags & BSTR_M_DEL_DUPS)
                 b_list_remove_dups(dest);
@@ -1822,10 +1828,16 @@ b_list_remove_dups(b_list **listp)
                 b_list *tmp = b_strsep((*listp)->lst[i], " ", 0);
                 if (!tmp)
                         continue;
-                for (unsigned x = 0; x < tmp->qty; ++x)
+                for (unsigned x = 0; x < tmp->qty; ++x) {
                         b_list_append(toks, tmp->lst[x]);
+                        tmp->lst[x] = NULL;
+                }
+#ifdef BSTR_USE_TALLOC
+                talloc_free(tmp);
+#else
                 free(tmp->lst);
                 free(tmp);
+#endif
         }
 
         b_list_destroy(*listp);
@@ -1833,21 +1845,31 @@ b_list_remove_dups(b_list **listp)
         qsort(toks->lst, toks->qty, sizeof(bstring *), &b_strcmp_fast_wrap);
 
         b_list *uniq = b_list_create_alloc(toks->qty);
-        uniq->lst[0] = toks->lst[0];
         uniq->qty    = 1;
+#ifdef BSTR_USE_TALLOC
+        uniq->lst[0] = talloc_move(uniq->lst, &toks->lst[0]);
+#else
+        uniq->lst[0] = toks->lst[0];
         b_writeprotect(uniq->lst[0]);
+#endif
 
         for (unsigned i = 1; i < toks->qty; ++i) {
                 if (!b_iseq(toks->lst[i], toks->lst[i-1])) {
+#ifdef BSTR_USE_TALLOC
+                        uniq->lst[uniq->qty] = talloc_move(uniq->lst, &toks->lst[i]);
+#else
                         uniq->lst[uniq->qty] = toks->lst[i];
                         b_writeprotect(uniq->lst[uniq->qty]);
+#endif
                         ++uniq->qty;
                 }
         }
 
         b_list_destroy(toks);
+#ifndef BSTR_USE_TALLOC
         for (unsigned i = 0; i < uniq->qty; ++i)
                 b_writeallow(uniq->lst[i]);
+#endif
 
         *listp = uniq;
         return BSTR_OK;

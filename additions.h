@@ -28,9 +28,9 @@ extern "C" {
 /**
  * Simple macro which returns the data of a bstring cast to char *
  */
-#if __STDC_VERSION__ >= 201112LL
+#if 0 && __STDC_VERSION__ >= 201112LL
 #  if defined __GNUC__ && 0
-#define BS(BSTR)                                                         \
+#    define BS(BSTR)                                                         \
         __extension__({                                                  \
                 _Pragma("GCC diagnostic push");                          \
                 _Pragma("GCC diagnostic ignored \"-Waddress\"");         \
@@ -43,7 +43,7 @@ extern "C" {
                 _Pragma("GCC diagnostic pop");                           \
                 mbstr_cstr_;                                             \
         })
-#else
+#  else
 #    define BS(BSTR)                                                     \
         ((BSTR) ? _Generic((BSTR),                                     \
                             const bstring *: ((char *)((BSTR)->data)), \
@@ -53,8 +53,8 @@ extern "C" {
 
 #  define BTS(BSTR) _Generic((BSTR), bstring: ((char *)((BSTR).data)))
 #else
-#  define BS(BSTR_)  ((BSTR) ? (char *)((BSTR_)->data) : "(null)")
-#  define BTS(BSTR_) ((char *)((BSTR_).data))
+#  define BS(BSTR)  ((BSTR) ? (char *)((BSTR)->data) : "(null)")
+#  define BTS(BSTR) ((char *)((BSTR).data))
 #endif
 
 
@@ -304,6 +304,19 @@ BSTR_PUBLIC void _b_list_dump_fd(int fd, const b_list *list, const char *listnam
 #define BSTR_M_SORT      0x02
 #define BSTR_M_SORT_FAST 0x04
 #define BSTR_M_DEL_DUPS  0x08
+
+#if 0
+#define _bstr_helper_b_list_steal(lst, bstr, VL, VB, VR) \
+        __extension__({                                  \
+                b_list * VL = (lst);                     \
+                bstring *VB = (bstr);                    \
+                int      VR = b_list_append(VL, VB);     \
+                VB          = NULL;                      \
+                VR;                                      \
+        })
+#define b_list_steal(lst, bstr) \
+        _bstr_helper_b_list_steal(lst, bstr, P99_UNIQ(L), P99_UNIQ(B), P99_UNIQ(R))
+#endif
 
 BSTR_PUBLIC int       b_list_append(b_list *list, bstring *bstr);
 BSTR_PUBLIC int       b_list_merge(b_list **dest, b_list *src, int flags);

@@ -12,32 +12,21 @@
 #  ifndef _GNU_SOURCE
 #    define _GNU_SOURCE
 #  endif
+#  if !defined(__clang__)
+#    define BSTR_PRINTF(format, argument) __attribute__((__format__(__gnu_printf__, format, argument)))
+#    define __aDESIGNIT __attribute__((__designated_init__))
+#  else
+#    define BSTR_PRINTF(format, argument) __attribute__((__format__(__printf__, format, argument)))
+#    define __aDESIGNIT
+#  endif
+#  define BSTR_UNUSED __attribute__((__unused__))
 #else
 #  define BSTR_PUBLIC
 #  define BSTR_PRIVATE
 #  define INLINE static inline
-#endif
-
-#if (__GNUC__ > 2) || (__GNUC__ == 2 && __GNUC_MINOR__ > 4)
-#  ifdef __clang__
-#    define BSTR_PRINTF(format, argument) __attribute__((__format__(__printf__, format, argument)))
-#  else
-#    define BSTR_PRINTF(format, argument) __attribute__((__format__(__gnu_printf__, format, argument)))
-#  endif
-#  define BSTR_UNUSED __attribute__((__unused__))
-#else
+#  define __attribute__(...)
 #  define BSTR_PRINTF(format, argument)
 #  define BSTR_UNUSED
-#endif
-
-#if defined(__GNUC__)
-#  if !defined(__clang__)
-#    define __aDESINIT __attribute__((__designated_init__))
-#  else
-#    define __aDESINIT
-#  endif
-#else
-#  define __attribute__(...)
 #endif
 
 #include <ctype.h>
@@ -50,14 +39,13 @@
 #include <string.h>
 
 #if defined(WIN32) || defined (__MINGW32__) || defined(__MINGW64__)
-//#  include <pthread_win32.h>
-#include <pthread.h>
+#  include <pthread.h>
 #else
 #  include <pthread.h>
 #endif
 
 #define BSTR_ERR (-1)
-#define BSTR_OK (0)
+#define BSTR_OK  (0)
 #define BSTR_BS_BUFF_LENGTH_GET (0)
 
 #ifdef __cplusplus
@@ -83,22 +71,24 @@ enum BSTR_flags {
 typedef struct bstring_s    bstring;
 typedef struct bstring_list b_list;
 
-struct __aDESINIT bstring_s {
-        unsigned char *data;
-        unsigned int   slen;
-        unsigned int   mlen;
-        unsigned char  flags;
+struct __aDESIGNIT bstring_s {
+        uchar    *data;
+        uint32_t  slen;
+        uint32_t  mlen;
+        uint16_t  flags;
 };
 #pragma pack(pop)
 
-struct __aDESINIT bstring_list {
+struct __aDESIGNIT bstring_list {
         bstring **lst;
-        unsigned  qty;
-        unsigned  mlen;
+        uint32_t  qty;
+        uint32_t  mlen;
 };
+
+#undef __aDESIGNIT
+
 
 #ifdef __cplusplus
 }
 #endif
-
 #endif /* defines.h */
